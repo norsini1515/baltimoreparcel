@@ -19,6 +19,8 @@ from baltimoreparcel.config import PARCEL_FIELDS
 OUTPUT_DIR = FILTERED_DIR #alias for clarity
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+FILTER_FIELDS = ["NFMTTLVL", "ADDRESS"]
+
 def process_year(year: int, column_subset:Iterable[str]=PARCEL_FIELDS):
     try:
         print(f"\nProcessing year: {year}")
@@ -34,7 +36,7 @@ def process_year(year: int, column_subset:Iterable[str]=PARCEL_FIELDS):
         gdf = ensure_crs(gdf, epsg=26985)
         filtered_gdf = filter_on_field(
             gdf,
-            fields=["NFMTTLVL", "ADDRESS"],
+            fields=FILTER_FIELDS,
             filters=[
                 5,
                 lambda s: s.notna() & (s.str.strip() != "")

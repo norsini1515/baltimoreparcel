@@ -65,7 +65,9 @@ def assemble_panel(subset_data: dict[int, gpd.GeoDataFrame]) -> gpd.GeoDataFrame
 
 # === MAIN RUN ===
 if __name__ == "__main__":
-    if False: # Set to True to re-generate panel from subsets
+    generate_new_panel = True  # Set to False to re-read existing panel
+    #---------------------------------------
+    if generate_new_panel:
         print(f"Reading in parcel cleaned_raw_subset data...")
         half_baked_parcel_data = load_subset_layers(YEARS)
 
