@@ -59,6 +59,7 @@ def write_gpkg_layer(
     year: int,
     name: str,
     directory: Path,
+    drop_nulls: bool = True,
     layer: str = "layer"
 ) -> None:
     """
@@ -75,12 +76,14 @@ def write_gpkg_layer(
     if gdf is None or gdf.empty:
         print(f"[{year}] Skipped – GeoDataFrame is None or empty")
         return
-
-    gdf = drop_null_geometries(gdf, year=year)
+    if drop_nulls:
+        print("Dropping null geometries before write...")
+        gdf = drop_null_geometries(gdf, year=year)
 
     try:
         gdf.to_file(output_path, layer=layer, driver="GPKG")
         print(f"[{year}] Wrote {len(gdf)} rows to layer '{layer}' in {output_path.name}")
+        
     except Exception as e:
         print(f"[{year}] Error writing layer '{layer}': {e}")
 
