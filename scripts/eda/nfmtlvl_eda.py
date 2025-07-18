@@ -29,7 +29,13 @@ if __name__ == "__main__":
     VALUE = "NFMTTLVL"
     
     read_in_full_panel = False
-    create_change_data = False
+    create_change_data = True
+    
+    summarize_change = False
+    
+    plot_log_value_distributions = False
+    plot_log_value_chng_distributions = True
+
     output_files = True
     #-----------------------------------------------------------------------------------
     print(f"Starting EDA for {VALUE}...")
@@ -53,6 +59,11 @@ if __name__ == "__main__":
     else:
         NFMTTLVL_gdf = read_vector_layer(year=f"LOG_{VALUE}_wide_panel", name=FULL_PANEL_GEOPKG, 
                                         directory=FULL_PANEL_DIR, layer="LOG_NFMTTLVL_pivot")
+        # print(NFMTTLVL_gdf.head())
+        # NFMTTLVL_gdf['START_YR'] = pd.to_datetime(NFMTTLVL_gdf['START_YR'], format="%Y").year
+        # print('yo')
+        # # NFMTTLVL_gdf['START_YR'] = NFMTTLVL_gdf['START_YR'].year
+        # NFMTTLVL_gdf['END_YR'] = NFMTTLVL_gdf['END_YR'].year
         print(f"Read pivoted LOG_{VALUE} has {NFMTTLVL_gdf.shape[0]} rows, {NFMTTLVL_gdf.shape[1]} columns")
     
     print(NFMTTLVL_gdf.head())
@@ -69,6 +80,10 @@ if __name__ == "__main__":
         print(NFMTTLVL_change_gdf.columns.to_list())
         print(NFMTTLVL_change_gdf.head())
         print(f"Change GeoDataFrame has {NFMTTLVL_change_gdf.shape[0]} rows, {NFMTTLVL_change_gdf.shape[1]} columns")
+
+        NFMTTLVL_change_gdf["START_YR"] = pd.to_datetime(NFMTTLVL_change_gdf["START_YR"], format="%Y")
+        NFMTTLVL_change_gdf["END_YR"] = pd.to_datetime(NFMTTLVL_change_gdf["END_YR"], format="%Y")
+
         if output_files:
             print(f"Writing change in LOG_{VALUE} to GeoPackage...")
             write_gpkg_layer(NFMTTLVL_change_gdf, year=f"LOG_{VALUE}_change_wide_panel", 
@@ -82,7 +97,6 @@ if __name__ == "__main__":
     print('-'*150, '\n')
     #-----------------------------------------------------------------------------------
     #EDA plots
-    plot_log_value_distributions = False
     if plot_log_value_distributions:
         print(f"\n\nPlotting LOG_{VALUE} distributions...")
         histogram_path = FULL_PANEL_DIR / f"{VALUE}_histograms.png"
@@ -95,11 +109,12 @@ if __name__ == "__main__":
                          plot_trend=True,
                          trend_save_path=trend_path)
     #-----------------------------------------------------------------------------------    
-    plot_log_value_chng_distributions = False
     if plot_log_value_chng_distributions:
         print(f"\n\nPlotting LOG_{VALUE}_CHNG distributions...")
         change_path = FULL_PANEL_DIR / f"{VALUE}_change_histograms.png"
         change_trend_path = FULL_PANEL_DIR / f"{VALUE}_change_trend.png"
+        NFMTTLVL_change_gdf['START_YR'] = NFMTTLVL_change_gdf['START_YR'].dt.year
+        NFMTTLVL_change_gdf['END_YR'] = NFMTTLVL_change_gdf['END_YR'].dt.year
         timeseries_histogram(NFMTTLVL_change_gdf, value_field=f"LOG_{VALUE}_CHNG", 
                             save_path=change_path,
                             show_plot=True,
@@ -107,7 +122,6 @@ if __name__ == "__main__":
                             plot_trend=True,
                             trend_save_path=change_trend_path)
     #-----------------------------------------------------------------------------------
-    summarize_change = True
     if summarize_change:
         print(f"\n\nSummarizing LOG_{VALUE}_CHNG...")
         summary_df = summarize_field(NFMTTLVL_change_gdf, value_field=f"LOG_{VALUE}_CHNG", group_fields=["START_YR", "END_YR"])
@@ -116,7 +130,6 @@ if __name__ == "__main__":
         summary_csv_path = FULL_PANEL_DIR / f"{VALUE}_log_change_summary.csv"
         summary_df.to_csv(summary_csv_path, index=False)
         print(f"[Saved] Summary CSV to: {summary_csv_path}")
-        
         
         
         print(f"\n\nSummarizing LOG_{VALUE}_CHNG by GEOGCODE...")
