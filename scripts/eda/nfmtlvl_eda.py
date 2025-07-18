@@ -28,8 +28,8 @@ def load_panel_data():
 if __name__ == "__main__":
     VALUE = "NFMTTLVL"
     
-    read_in_full_panel = True
-    read_in_change_data = False
+    read_in_full_panel = False
+    create_change_data = False
     output_files = True
     #-----------------------------------------------------------------------------------
     print(f"Starting EDA for {VALUE}...")
@@ -56,23 +56,30 @@ if __name__ == "__main__":
         print(f"Read pivoted LOG_{VALUE} has {NFMTTLVL_gdf.shape[0]} rows, {NFMTTLVL_gdf.shape[1]} columns")
     
     print(NFMTTLVL_gdf.head())
-    print('-'*40, '\n')
+    print('-'*150, '\n')
     #-----------------------------------------------------------------------------------
-    #Calculate change in NFMTTLVL
-    print(f"Calculating change in LOG_{VALUE}...")
-    #calculate change- total change per change group
-    NFMTTLVL_change_gdf = calculate_change(NFMTTLVL_gdf, value_prefix=f"LOG_{VALUE}", per_year=False)
-    #enrich with static fields
-    NFMTTLVL_change_gdf = enrich_change_gdf(NFMTTLVL_change_gdf, NFMTTLVL_gdf, ["GEOCODE", "BLOCK_GROUP"])
+    if create_change_data:
+        #Calculate change in NFMTTLVL
+        print(f"Calculating change in LOG_{VALUE}...")
+        #calculate change- total change per change group
+        NFMTTLVL_change_gdf = calculate_change(NFMTTLVL_gdf, value_prefix=f"LOG_{VALUE}", per_year=False)
+        #enrich with static fields
+        NFMTTLVL_change_gdf = enrich_change_gdf(NFMTTLVL_change_gdf, NFMTTLVL_gdf, ["GEOGCODE"])
 
-    print(NFMTTLVL_change_gdf.columns.to_list())
+        print(NFMTTLVL_change_gdf.columns.to_list())
+        print(NFMTTLVL_change_gdf.head())
+        print(f"Change GeoDataFrame has {NFMTTLVL_change_gdf.shape[0]} rows, {NFMTTLVL_change_gdf.shape[1]} columns")
+        if output_files:
+            print(f"Writing change in LOG_{VALUE} to GeoPackage...")
+            write_gpkg_layer(NFMTTLVL_change_gdf, year=f"LOG_{VALUE}_change_wide_panel", 
+                            name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, 
+                            layer="LOG_NFMTTLVL_change")
+    else:
+        NFMTTLVL_change_gdf = read_vector_layer(year=f"LOG_{VALUE}_change_wide_panel", name=FULL_PANEL_GEOPKG, 
+                                        directory=FULL_PANEL_DIR, layer="LOG_NFMTTLVL_change")
+        print(f"Read change in LOG_{VALUE} has {NFMTTLVL_change_gdf.shape[0]} rows, {NFMTTLVL_change_gdf.shape[1]} columns")
     print(NFMTTLVL_change_gdf.head())
-    print(f"Change GeoDataFrame has {NFMTTLVL_change_gdf.shape[0]} rows, {NFMTTLVL_change_gdf.shape[1]} columns")
-    if output_files:
-        print(f"Writing change in LOG_{VALUE} to GeoPackage...")
-        write_gpkg_layer(NFMTTLVL_change_gdf, year=f"LOG_{VALUE}_change_wide_panel", 
-                        name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, 
-                        layer="LOG_NFMTTLVL_change")
+    print('-'*150, '\n')
     #-----------------------------------------------------------------------------------
     #EDA plots
     plot_log_value_distributions = False
@@ -87,7 +94,7 @@ if __name__ == "__main__":
                          n_cols=4, bins=30,
                          plot_trend=True,
                          trend_save_path=trend_path)
-        
+    #-----------------------------------------------------------------------------------    
     plot_log_value_chng_distributions = False
     if plot_log_value_chng_distributions:
         print(f"\n\nPlotting LOG_{VALUE}_CHNG distributions...")
@@ -99,23 +106,27 @@ if __name__ == "__main__":
                             n_cols=4, bins=30,
                             plot_trend=True,
                             trend_save_path=change_trend_path)
-
     #-----------------------------------------------------------------------------------
     summarize_change = True
     if summarize_change:
         print(f"\n\nSummarizing LOG_{VALUE}_CHNG...")
-        summary_df = summarize_field(NFMTTLVL_change_gdf, value_field=f"LOG_{VALUE}_CHNG")
+        summary_df = summarize_field(NFMTTLVL_change_gdf, value_field=f"LOG_{VALUE}_CHNG", group_fields=["START_YR", "END_YR"])
         print(summary_df)
 
         summary_csv_path = FULL_PANEL_DIR / f"{VALUE}_log_change_summary.csv"
         summary_df.to_csv(summary_csv_path, index=False)
         print(f"[Saved] Summary CSV to: {summary_csv_path}")
+        
+        
+        
+        print(f"\n\nSummarizing LOG_{VALUE}_CHNG by GEOGCODE...")
+        summary_df = summarize_field(NFMTTLVL_change_gdf, value_field=f"LOG_{VALUE}_CHNG", group_fields=["GEOGCODE", "START_YR", "END_YR"])
+        print(summary_df)
 
-
-
-
-
-
+        summary_csv_path = FULL_PANEL_DIR / f"{VALUE}_geogcode_log_change_summary.csv"
+        summary_df.to_csv(summary_csv_path, index=False)
+        print(f"[Saved] Summary CSV to: {summary_csv_path}")
+    #-----------------------------------------------------------------------------------
 
 
     print("Done.")

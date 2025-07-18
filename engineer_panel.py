@@ -73,10 +73,11 @@ def enrich_change_gdf(change_gdf: gpd.GeoDataFrame, base_gdf: gpd.GeoDataFrame, 
 
 
 def summarize_field(change_gdf: gpd.GeoDataFrame, 
-                    value_field: str = "LOG_NFMTTLVL_CHNG"):
+                    value_field: str = "LOG_NFMTTLVL_CHNG",
+                    group_fields: list[str] = ["START_YR", "END_YR"]) -> pd.DataFrame:
     df = (
         change_gdf
-        .groupby(["START_YR", "END_YR"])
+        .groupby(group_fields)
         .agg(
             n=("ACCTID", "count"),
             mean=(value_field, "mean"),
