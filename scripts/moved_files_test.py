@@ -3,9 +3,9 @@ from baltimoreparcel.gis_utils import (
     select_columns, write_gpkg_layer
 )
 from baltimoreparcel.directories import (
-    RAW_DIR, FILTERED_DIR, get_year_gpkg_dir
+    GBD_DIR, FILTERED_DIR, get_year_gpkg_dir
 )
 
 
 if  __name__ == "__main__":
-    print("Testing moved files...")
+    print("Testing moved files...", GBD_DIR)

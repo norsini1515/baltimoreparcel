@@ -2,9 +2,12 @@ from pathlib import Path
 
 PROJECT_DIR = Path(__file__).parent.parent
 
+GBD_DIR = PROJECT_DIR / "BaltimoreParcelProject.gdb"
 DATA_DIR = PROJECT_DIR / "data"
 RAW_DIR = DATA_DIR / "raw"
 FILTERED_DIR = DATA_DIR / "filtered"
+
+LOGS_DIR = PROJECT_DIR / "logs"
 
 def ensure_dir(path: Path) -> Path:
     """Ensure a directory exists before use."""

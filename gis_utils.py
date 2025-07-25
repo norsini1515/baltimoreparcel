@@ -3,7 +3,11 @@
 
 import geopandas as gpd
 from pathlib import Path
-from .directories import DATA_DIR
+from .directories import DATA_DIR, GBD_DIR
+from .utils import info, success, error, warn
+import arcpy
+
+
 ##################### SECTION 1 #####################
 # Validation + Path Logic
 #####################################################
@@ -60,7 +64,7 @@ def write_gpkg_layer(
     name: str,
     directory: Path,
     drop_nulls: bool = True,
-    layer: str = "layer"
+    layer: str = "layer",
 ) -> None:
     """
     Write GeoDataFrame to GeoPackage.
@@ -81,48 +85,59 @@ def write_gpkg_layer(
         gdf = drop_null_geometries(gdf, year=year)
 
     try:
-        gdf.to_file(output_path, layer=layer, driver="GPKG")
+        gdf.to_file(output_path, layer=layer, driver="GPKG", overwrite=True)
         print(f"[{year}] Wrote {len(gdf)} rows to layer '{layer}' in {output_path.name}")
         
     except Exception as e:
         print(f"[{year}] Error writing layer '{layer}': {e}")
 
-def pivot_panel(
-    panel_gdf: gpd.GeoDataFrame,
-    value_field: str,
-    year_for_geometry: int = 2024,
-    id_field: str = "ACCTID"
-) -> gpd.GeoDataFrame:
+def export_to_geodb(
+    input_gpkg_path: Path,
+    layer_name: str,
+    gdb_path: Path,
+    out_feature_name: str
+) -> Path:
     """
-    Pivot a long panel GeoDataFrame to wide format by year for a specified value field.
-    Keeps geometry from the reference year.
+    Export a layer from a GeoPackage (.gpkg) to a File Geodatabase (.gdb).
+
+    Parameters:
+    ----------
+    input_gpkg_path : Path
+        Path to the .gpkg file containing the source layer.
+    layer_name : str
+        Name of the layer inside the GPKG.
+    gdb_path : Path
+        Path to the existing File Geodatabase (.gdb).
+    out_feature_name : str
+        Name for the output feature class inside the GDB.
+
+    Returns:
+    -------
+    Path to the exported feature class (str), or None if failed.
     """
-    print(f"Pivoting '{value_field}' by year...")
-
-    # Pivot
-    pivot_gdf = panel_gdf.pivot_table(
-        index=id_field,
-        columns="YEAR",
-        values=value_field
-    ).reset_index()
-
-    print(f"{value_field} pivoted data has {len(pivot_gdf):} rows, {len(pivot_gdf.columns)} columns")
+    arcpy.env.overwriteOutput = True
     
-    # Rename year columns: e.g., NFMTTLVL_2020
-    pivot_gdf.columns = [
-        f"{value_field}_{col}" if isinstance(col, int) else col
-        for col in pivot_gdf.columns
-    ]
+    input_layer = f"{input_gpkg_path}\\{layer_name}"
+    output_fc = gdb_path / out_feature_name
 
-    # Extract geometry from specified year
-    geom_df = panel_gdf[panel_gdf["YEAR"] == year_for_geometry][[id_field, "geometry"]]
-    print(f"[Geometry] Found {len(geom_df)} rows from {year_for_geometry}")
-    
-    # Merge geometry and pivoted data
-    merged = geom_df.merge(pivot_gdf, on=id_field, how="left")
+    try:
+        if arcpy.Exists(str(output_fc)):
+            warn(f"Feature class already exists. Deleting: {output_fc}")
+            arcpy.management.Delete(str(output_fc))
 
-    print(f"[Pivoted Panel] Final shape: {merged.shape}")
-    return gpd.GeoDataFrame(merged, geometry="geometry", crs=panel_gdf.crs)
+        info(f"Exporting {layer_name} from {input_gpkg_path.name} to {output_fc}...")
+        arcpy.conversion.ExportFeatures(
+            in_features=input_layer,
+            out_features=str(output_fc)
+        )
+
+        success(f"Export successful: {output_fc}")
+        return output_fc
+
+    except Exception as e:
+        error(f"export_to_geodb failed: {e}")
+        return None
+
 ##################### SECTION 3 #####################
 # Data Cleaning + Processing Functions
 #####################################################
@@ -185,3 +200,89 @@ def select_columns(gdf: gpd.GeoDataFrame, columns: list[str]) -> gpd.GeoDataFram
     if missing:
         print(f"Warning – missing columns: {missing}")
     return gdf[keep]
+
+def pivot_panel(
+    panel_gdf: gpd.GeoDataFrame,
+    value_field: str,
+    year_for_geometry: int = 2024,
+    id_field: str = "ACCTID",
+    aggfunc: str = "first",  # default to safer choice
+) -> gpd.GeoDataFrame:
+    """
+    Pivot a long panel GeoDataFrame to wide format by year for a specified value field.
+    Keeps geometry from the reference year.
+    """
+    print(f"Pivoting '{value_field}' by year...")
+
+    # Pivot
+    pivot_gdf = panel_gdf.pivot_table(
+        index=id_field,
+        columns="YEAR",
+        values=value_field,
+        aggfunc=aggfunc,
+    ).reset_index()
+
+    print(f"{value_field} pivoted data has {len(pivot_gdf):} rows, {len(pivot_gdf.columns)} columns")
+    
+    # Rename year columns: e.g., NFMTTLVL_2020
+    pivot_gdf.columns = [
+        f"{value_field}_{col}" if isinstance(col, int) else col
+        for col in pivot_gdf.columns
+    ]
+
+    # Extract geometry from specified year
+    geom_df = (
+        panel_gdf
+        .dropna(subset=["geometry"])
+        .sort_values(["ACCTID", "YEAR"])  # ensure earliest geometry if needed
+        .groupby(id_field, as_index=False)
+        .first()[[id_field, "geometry"]]
+    )
+    print(f"[Geometry] Found {len(geom_df)} rows from {year_for_geometry}")
+    
+    # Merge geometry and pivoted data
+    merged = geom_df.merge(pivot_gdf, on=id_field, how="left")
+
+    print(f"[Pivoted Panel] Final shape: {merged.shape}")
+    return gpd.GeoDataFrame(merged, geometry="geometry", crs=panel_gdf.crs)
+
+def convert_time_fields(
+    table_path: Path | str,
+    field_pairs: list[tuple[str, str]],
+    input_format: str = "yyyy",
+    output_type: str = "DATE"
+):
+    """
+    Convert integer year fields to ArcGIS Date fields using ConvertTimeField.
+
+    Parameters:
+    ----------
+    table_path : Path or str
+        Path to the GDB feature class or table (e.g., '.../BaltimoreParcelProject.gdb/change_panel').
+    field_pairs : list of tuples
+        Each tuple is (input_year_field, output_date_field).
+    input_format : str, optional
+        Format of the input year field. Defaults to "yyyy".
+    output_type : str, optional
+        Output time type. Use "DATE" for standard ArcGIS Date field.
+
+    Returns:
+    -------
+    None
+    """
+    try:
+        print(f"Converting time fields in {table_path}...")
+        for in_field, out_field in field_pairs:
+            print(f"{in_field} -> {out_field}...")
+            arcpy.management.ConvertTimeField(
+                in_table=str(table_path),
+                input_time_field=in_field,
+                input_time_format=input_format,
+                output_time_field=out_field,
+                output_time_type=output_type,
+                output_time_format="",  # defaults to match input
+                timezone_or_field=""
+            )
+        success(f"Time conversion complete.")
+    except Exception as e:
+        error(f"convert_time_fields failed: {e}")
