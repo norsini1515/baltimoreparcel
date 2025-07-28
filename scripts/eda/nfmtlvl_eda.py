@@ -3,9 +3,10 @@
 ===============================================================================
 '''
 from baltimoreparcel.gis_utils import read_vector_layer, write_gpkg_layer, pivot_panel
-from baltimoreparcel.directories import get_year_gpkg_dir
+from baltimoreparcel.directories import get_year_gpkg_dir, GBD_DIR
 from baltimoreparcel.engineer_panel import log_value, calculate_change, summarize_field, enrich_change_gdf
 from baltimoreparcel.scripts.eda.plots import timeseries_histogram
+from baltimoreparcel.utils import info, warn, error
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -16,20 +17,51 @@ from pathlib import Path
 
 FULL_PANEL_GEOPKG = "Baci_full_panel.gpkg"
 FULL_PANEL_DIR = get_year_gpkg_dir("full_panel")
-LAYER_NAME = "full_panel_subset"
 
-def load_panel_data():
-    panel_gdf = read_vector_layer(year='full_panel', name=FULL_PANEL_GEOPKG, 
-                                  directory=FULL_PANEL_DIR, layer=LAYER_NAME)
-    print(f"Read panel has {panel_gdf.shape[0]} rows, {panel_gdf.shape[1]} columns")
-    return panel_gdf
+FULL_PANEL_NAME = "full_panel"
+CHANGE_PANEL_NAME = "full_change_panel"
+
+def read_panels(which: str = "both"):
+    """
+    Read full and/or change panel GeoDataFrames from the geodatabase.
+
+    Parameters:
+    -----------
+    which : str
+        One of "full", "change", or "both" (default: "both")
+
+    Returns:
+    --------
+    tuple
+        Depending on `which`, returns:
+        - ("full") → full_panel_gdf
+        - ("change") → change_panel_gdf
+        - ("both") → (full_panel_gdf, change_panel_gdf)
+    """
+    which = which.lower()
+    if which not in {"full", "change", "both"}:
+        raise ValueError("Argument `which` must be one of: 'full', 'change', 'both'")
+
+    result = ()
+
+    if which in {"full", "both"}:
+        print("Reading full panel...")
+        full_panel_gdf = gpd.read_file(str(GBD_DIR), layer=FULL_PANEL_NAME)
+        info(f"Full panel shape: {full_panel_gdf.shape=}")
+        result += (full_panel_gdf,)
+
+    if which in {"change", "both"}:
+        print("Reading change panel...")
+        change_panel_gdf = gpd.read_file(str(GBD_DIR), layer=CHANGE_PANEL_NAME)
+        info(f"Change panel shape: {change_panel_gdf.shape=}")
+        result += (change_panel_gdf,)
+
+    return result[0] if which in {"full", "change"} else result
 
 
 if __name__ == "__main__":
-    VALUE = "NFMTTLVL"
-    
-    read_in_full_panel = False
-    create_change_data = True
+    FULL_VALUE = "LOG_REAL_NFMTTLVL"
+    CHNG_VALUE = "LOG_REAL_NFMTTLVL_CHNG"
     
     summarize_change = False
     
@@ -38,71 +70,26 @@ if __name__ == "__main__":
 
     output_files = True
     #-----------------------------------------------------------------------------------
-    print(f"Starting EDA for {VALUE}...")
-    if read_in_full_panel:
-        #load full panel data
-        panel_gdf = load_panel_data()
-        #apply log transform
-        panel_gdf = log_value(panel_gdf, value_field=VALUE)
-        static_fiels = ["ACCTID", "GEOGCODE"]
-        static_cols_df = panel_gdf[static_fiels].drop_duplicates().set_index("ACCTID")
-        #pivot to wide format
-        NFMTTLVL_gdf = pivot_panel(panel_gdf=panel_gdf, value_field=f"LOG_{VALUE}")
-        NFMTTLVL_gdf = NFMTTLVL_gdf.merge(static_cols_df, left_on="ACCTID", right_index=True, how="left")
-        print(NFMTTLVL_gdf.columns.to_list())
-        
-        if output_files:
-            print(f"Writing pivoted LOG_{VALUE} to GeoPackage...")
-            write_gpkg_layer(NFMTTLVL_gdf, year=f"LOG_{VALUE}_wide_panel", 
-                            name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, 
-                            layer="LOG_NFMTTLVL_pivot")
-    else:
-        NFMTTLVL_gdf = read_vector_layer(year=f"LOG_{VALUE}_wide_panel", name=FULL_PANEL_GEOPKG, 
-                                        directory=FULL_PANEL_DIR, layer="LOG_NFMTTLVL_pivot")
-        # print(NFMTTLVL_gdf.head())
-        # NFMTTLVL_gdf['START_YR'] = pd.to_datetime(NFMTTLVL_gdf['START_YR'], format="%Y").year
-        # print('yo')
-        # # NFMTTLVL_gdf['START_YR'] = NFMTTLVL_gdf['START_YR'].year
-        # NFMTTLVL_gdf['END_YR'] = NFMTTLVL_gdf['END_YR'].year
-        print(f"Read pivoted LOG_{VALUE} has {NFMTTLVL_gdf.shape[0]} rows, {NFMTTLVL_gdf.shape[1]} columns")
+    print(f"Starting EDA for {FULL_VALUE}...")
+    if plot_log_value_distributions:
+        panel_gdf = read_panels(which='full')
+        print(panel_gdf.head())
     
-    print(NFMTTLVL_gdf.head())
-    print('-'*150, '\n')
+    if plot_log_value_chng_distributions:
+        change_panel_gdf = read_panels(which='change')
+        print(change_panel_gdf.head())
     #-----------------------------------------------------------------------------------
-    if create_change_data:
-        #Calculate change in NFMTTLVL
-        print(f"Calculating change in LOG_{VALUE}...")
-        #calculate change- total change per change group
-        NFMTTLVL_change_gdf = calculate_change(NFMTTLVL_gdf, value_prefix=f"LOG_{VALUE}", per_year=False)
-        #enrich with static fields
-        NFMTTLVL_change_gdf = enrich_change_gdf(NFMTTLVL_change_gdf, NFMTTLVL_gdf, ["GEOGCODE"])
-
-        print(NFMTTLVL_change_gdf.columns.to_list())
-        print(NFMTTLVL_change_gdf.head())
-        print(f"Change GeoDataFrame has {NFMTTLVL_change_gdf.shape[0]} rows, {NFMTTLVL_change_gdf.shape[1]} columns")
-
-        NFMTTLVL_change_gdf["START_YR"] = pd.to_datetime(NFMTTLVL_change_gdf["START_YR"], format="%Y")
-        NFMTTLVL_change_gdf["END_YR"] = pd.to_datetime(NFMTTLVL_change_gdf["END_YR"], format="%Y")
-
-        if output_files:
-            print(f"Writing change in LOG_{VALUE} to GeoPackage...")
-            write_gpkg_layer(NFMTTLVL_change_gdf, year=f"LOG_{VALUE}_change_wide_panel", 
-                            name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, 
-                            layer="LOG_NFMTTLVL_change")
-    else:
-        NFMTTLVL_change_gdf = read_vector_layer(year=f"LOG_{VALUE}_change_wide_panel", name=FULL_PANEL_GEOPKG, 
-                                        directory=FULL_PANEL_DIR, layer="LOG_NFMTTLVL_change")
-        print(f"Read change in LOG_{VALUE} has {NFMTTLVL_change_gdf.shape[0]} rows, {NFMTTLVL_change_gdf.shape[1]} columns")
-    print(NFMTTLVL_change_gdf.head())
     print('-'*150, '\n')
     #-----------------------------------------------------------------------------------
     #EDA plots
     if plot_log_value_distributions:
-        print(f"\n\nPlotting LOG_{VALUE} distributions...")
-        histogram_path = FULL_PANEL_DIR / f"{VALUE}_histograms.png"
-        trend_path = FULL_PANEL_DIR / f"{VALUE}_trend.png"
+        print(f"\n\nPlotting {FULL_VALUE} distributions...")
+        histogram_path = FULL_PANEL_DIR / f"{FULL_VALUE}_histograms.png"
+        trend_path = FULL_PANEL_DIR / f"{FULL_VALUE}_trend.png"
 
-        timeseries_histogram(NFMTTLVL_gdf, value_field=f"LOG_{VALUE}", 
+        full_value_data = pivot_panel(panel_gdf, value_field=FULL_VALUE)
+        print(f"{full_value_data.shape=}, {full_value_data.columns.tolist()=}")
+        timeseries_histogram(full_value_data, value_field=FULL_VALUE,
                          save_path=histogram_path,
                          show_plot=True,
                          n_cols=4, bins=30,
@@ -110,12 +97,10 @@ if __name__ == "__main__":
                          trend_save_path=trend_path)
     #-----------------------------------------------------------------------------------    
     if plot_log_value_chng_distributions:
-        print(f"\n\nPlotting LOG_{VALUE}_CHNG distributions...")
-        change_path = FULL_PANEL_DIR / f"{VALUE}_change_histograms.png"
-        change_trend_path = FULL_PANEL_DIR / f"{VALUE}_change_trend.png"
-        NFMTTLVL_change_gdf['START_YR'] = NFMTTLVL_change_gdf['START_YR'].dt.year
-        NFMTTLVL_change_gdf['END_YR'] = NFMTTLVL_change_gdf['END_YR'].dt.year
-        timeseries_histogram(NFMTTLVL_change_gdf, value_field=f"LOG_{VALUE}_CHNG", 
+        print(f"\n\nPlotting {CHNG_VALUE}_CHNG distributions...")
+        change_path = FULL_PANEL_DIR / f"{CHNG_VALUE}_change_histograms.png"
+        change_trend_path = FULL_PANEL_DIR / f"{CHNG_VALUE}_change_trend.png"
+        timeseries_histogram(change_panel_gdf, value_field=CHNG_VALUE, 
                             save_path=change_path,
                             show_plot=True,
                             n_cols=4, bins=30,

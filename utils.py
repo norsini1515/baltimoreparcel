@@ -56,10 +56,15 @@ class Logger:
         if cls._instance:
             cls._instance.close()
 
-def _log(level, color, msg):
-    prefix = f"{color}[{level}]{Fore.RESET} "
+def color_text(text: str, r: int, g: int, b: int) -> str:
+    """Return a string wrapped in 24-bit RGB ANSI escape codes."""
+    return f"\033[38;2;{r};{g};{b}m{text}\033[0m"
+
+def _log(level, color_code, msg):
+    prefix = f"{color_code}[{level}]{Fore.RESET} "
     print(prefix + msg)
 
+def process_step(msg): _log("PROCESS", color_text("", 209, 255, 246), msg)
 def info(msg): _log("INFO", Fore.CYAN, msg)
 def warn(msg): _log("WARNING", Fore.YELLOW, msg)
 def error(msg): _log("ERROR", Fore.RED, msg)

@@ -26,7 +26,7 @@ Main Workflow:
 
 Key Outputs:
 ------------
-- `Baci_full_panel.gpkg` with `full_panel_subset` and `full_change_panel` layers
+- `Baci_full_panel.gpkg` with `full_panel` and `full_change_panel` layers
 - FileGDB feature class (`full_change_panel`) with ArcGIS time fields
 
 Dependencies:
@@ -49,8 +49,8 @@ from baltimoreparcel.directories import DATA_DIR, LOGS_DIR, GBD_DIR, get_year_gp
 from baltimoreparcel.gis_utils import read_vector_layer, write_gpkg_layer, pivot_panel, export_to_geodb, convert_time_fields
 from baltimoreparcel.engineer_panel import enrich_change_gdf, log_value, calculate_change, to_real_data, spatial_join_with_neighborhoods
 from baltimoreparcel.utils import Logger, info, warn, error, success
-
-YEARS = range(2003, 2025)  # or subset like range(2010, 2020)
+from baltimoreparcel.config import ALL_YEARS
+YEARS = ALL_YEARS  # or subset like range(2010, 2020)
 #values to calculate real values for using CPI adjustment
 MONETARY_VALUES = ['NFMLNDVL', 'NFMIMPVL', 'NFMTTLVL']
 #values to log transform
@@ -73,14 +73,15 @@ CALCULATE_CHANGE_VALUES = NUMERIC_FIELD_VALUES + STR_NUMERIC_FIELD_VALUES
 LAYER_NAME = "{year}subset"
 ID_FIELD = "ACCTID"  # You said this is most consistent
 
-# Where to save output (could be CSV or GPKG or feather)
-OUTPUT_PATH = ensure_dir(DATA_DIR / "linked_panels")
-
 FULL_PANEL_GEOPKG = "Baci_full_panel.gpkg"
 FULL_PANEL_DIR = get_year_gpkg_dir("full_panel")
 
+full_panel_name = "full_panel"  # Name for full panel layer in GPKG
+change_panel_name = "full_change_panel" # Name for change panel layer in GPKG
+
+
 def read_full_panel():
-    panel_gdf = read_vector_layer(year='full_panel', name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, layer="full_panel_subset")
+    panel_gdf = read_vector_layer(year='full_panel', name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, layer=full_panel_name)
     
     print(f"Read panel has {panel_gdf.shape[0]} rows, {panel_gdf.shape[1]} columns")
     return panel_gdf
@@ -170,21 +171,23 @@ def calculate_log_fields(panel_gdf:gpd.GeoDataFrame=None, log_fields:list[str]=C
 
 # === MAIN RUN ===
 if __name__ == "__main__":
+    ############################################
+    # Set up environment
+    print("Starting assemble_panel script...")
     generate_new_panel = False  # Set to False to re-read existing panel
     calculate_real_values = False  # Set to False to skip CPI adjustment
     log_value_fields = False  # Set to True to create log-transformed fields
     build_panel_components = [generate_new_panel, calculate_real_values, log_value_fields] #indicate if we should resave the full panel.
     build_change_panel = True #Set to True to create change panel in full panel characteristics
-    
+    ############################################
     panel_gdf = None # Initialize panel_gdf to None
-    
     arcpy.env.workspace = str(GBD_DIR)
-    #---------------------------------------
+    ############################################
+    # Set up logging
     now = datetime.datetime.now()
     timestamp = now.strftime("%Y%m%d %H%M")
     logger = Logger(LOGS_DIR / f"assemble_panel_{timestamp}.log")
-
-    #---------------------------------------
+    ############################################
     #assemble full panel data using cleaned_raw_subset layers
     if generate_new_panel:
         print("Beginning generation of full panel")
@@ -193,31 +196,30 @@ if __name__ == "__main__":
 
         print(f"Assembling panel data...")
         panel_gdf = assemble_panel(half_baked_parcel_data)
-    #---------------------------------------
+    ############################################
     #using baltimore-townson-columbia CPI calcualte real values in 2024 dollars
     if calculate_real_values:
         panel_gdf = calculate_real_data(panel_gdf=panel_gdf, monetary_values=MONETARY_VALUES)
-    #---------------------------------------
+    ############################################
     #take log of log fields
     if log_value_fields:
         panel_gdf = calculate_log_fields(panel_gdf=panel_gdf, log_fields=CALCULATE_LOG_FIELDS)
-    #---------------------------------------
-
+    ############################################
     #if panel_gdf is None, read in existing full panel
     if panel_gdf is None:
         print("Panel data not loaded, reading existing full panel...")
         panel_gdf = read_full_panel()
-
+    ############################################
+    #print out panel gdf columns
     info(f"Panel gdf columns: {panel_gdf.columns.tolist()}")
     info(f"{panel_gdf.shape=}")
-    
+    ############################################
     #write updated panel data file out
     if any(build_panel_components):
         print(f"appending neighborhood information. {panel_gdf.shape=}")
         panel_gdf = spatial_join_with_neighborhoods(panel_gdf)
         print(f"resulting shape: {panel_gdf.shape=}")
 
-        full_panel_name = "full_panel_subset"
         print(f"Saving {full_panel_name} data...")
         write_gpkg_layer(panel_gdf, year='full_panel', name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, layer=full_panel_name)
 
@@ -229,16 +231,18 @@ if __name__ == "__main__":
             gdb_path=GBD_DIR,
             out_feature_name=full_panel_name
         )
-        print('covnerting time fields to date')
         # Step 2: Convert START_YR and END_YR to DATE fields (if export succeeded)
         if exported_fc_path:
+            print('converting time fields to date')
             convert_time_fields(
             table_path=exported_fc_path.name,  # now just the name of the FC
             field_pairs=[("YEAR", "YEAR_DATE")]
         )
         success(f"exported {full_panel_name}")
     
+    ############################################
     #CONSTRUCT CHANGE PANEL
+    ############################################
     if build_change_panel:
         #---------------------------------------
         #make a wide format for mapping in ArcGIS
@@ -303,10 +307,9 @@ if __name__ == "__main__":
         # Convert to GeoDataFrame
         change_df = gpd.GeoDataFrame(change_df, geometry="geometry", crs=panel_gdf.crs)
         
-        change_df = enrich_change_gdf(change_df, panel_gdf, enrich_fields=["NEIGHBORHOOD"])
+        change_df = enrich_change_gdf(change_df, panel_gdf, enrich_fields=["NEIGHBORHOOD", "GEOGCODE"])
         print(f"Final GeoDataFrame shape: {change_df.shape=}")
         
-        change_panel_name = "full_change_panel"
         #output change data
         write_gpkg_layer(change_df, year="change_panel", name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, layer=change_panel_name)
         
@@ -319,9 +322,9 @@ if __name__ == "__main__":
             gdb_path=GBD_DIR,
             out_feature_name=change_panel_name
         )
-        print('covnerting time fields to date')
         # Step 2: Convert START_YR and END_YR to DATE fields (if export succeeded)
         if exported_fc_path:
+            print('converting time fields to date')
             convert_time_fields(
             table_path=exported_fc_path.name,  # now just the name of the FC
             field_pairs=[("START_YR", "START_DATE"), ("END_YR", "END_DATE")]

@@ -5,6 +5,7 @@ import geopandas as gpd
 from pathlib import Path
 from .directories import DATA_DIR, GBD_DIR
 from .utils import info, success, error, warn
+from shapely.ops import transform
 import arcpy
 
 
@@ -28,6 +29,17 @@ def drop_null_geometries(gdf: gpd.GeoDataFrame, year: int = None) -> gpd.GeoData
             print(f"[{year}] Dropping {nulls} rows with null geometry")
         gdf = gdf[gdf.geometry.notnull()].copy()
     return gdf
+
+def sanitize_geometry(gdf):
+    print("[DEBUG] Sanitizing geometry: forcing 2D...")
+    gdf["geometry"] = gdf["geometry"].apply(strip_z)
+    return gdf
+
+def strip_z(geom):
+    """Force geometry to 2D (drop Z coordinate)."""
+    if geom is None:
+        return None
+    return transform(lambda x, y, *_: (x, y), geom)
 ##################### SECTION 2 #####################
 # IO Functions
 #####################################################
@@ -80,6 +92,11 @@ def write_gpkg_layer(
     if gdf is None or gdf.empty:
         print(f"[{year}] Skipped – GeoDataFrame is None or empty")
         return
+    
+    print("Sanitizing geometry...")
+    gdf = sanitize_geometry(gdf)
+    print(gdf.head())
+
     if drop_nulls:
         print("Dropping null geometries before write...")
         gdf = drop_null_geometries(gdf, year=year)
