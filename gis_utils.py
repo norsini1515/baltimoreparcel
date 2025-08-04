@@ -43,6 +43,9 @@ def strip_z(geom):
 ##################### SECTION 2 #####################
 # IO Functions
 #####################################################
+def arcstr(path):
+    return str(path).replace("\\", "/")
+
 def read_gis_file(path: Path, layer: str | None = None) -> gpd.GeoDataFrame:
     if layer:
         return gpd.read_file(path, layer=layer)
@@ -95,7 +98,7 @@ def write_gpkg_layer(
     
     print("Sanitizing geometry...")
     gdf = sanitize_geometry(gdf)
-    print(gdf.head())
+    # print(gdf.head())
 
     if drop_nulls:
         print("Dropping null geometries before write...")
@@ -223,6 +226,7 @@ def pivot_panel(
     value_field: str,
     year_for_geometry: int = 2024,
     id_field: str = "ACCTID",
+    col_field: str = "YEAR",
     aggfunc: str = "first",  # default to safer choice
 ) -> gpd.GeoDataFrame:
     """
@@ -234,7 +238,7 @@ def pivot_panel(
     # Pivot
     pivot_gdf = panel_gdf.pivot_table(
         index=id_field,
-        columns="YEAR",
+        columns=col_field,
         values=value_field,
         aggfunc=aggfunc,
     ).reset_index()
@@ -251,7 +255,7 @@ def pivot_panel(
     geom_df = (
         panel_gdf
         .dropna(subset=["geometry"])
-        .sort_values(["ACCTID", "YEAR"])  # ensure earliest geometry if needed
+        .sort_values(["ACCTID", col_field])  # ensure earliest geometry if needed
         .groupby(id_field, as_index=False)
         .first()[[id_field, "geometry"]]
     )

@@ -2,6 +2,7 @@
 '''Exploratory Data Analysis of NFMTTLVL in the panel data
 ===============================================================================
 '''
+import sys
 from baltimoreparcel.gis_utils import read_vector_layer, write_gpkg_layer, pivot_panel
 from baltimoreparcel.directories import get_year_gpkg_dir, GBD_DIR
 from baltimoreparcel.engineer_panel import log_value, calculate_change, summarize_field, enrich_change_gdf
@@ -65,7 +66,7 @@ if __name__ == "__main__":
     
     summarize_change = False
     
-    plot_log_value_distributions = False
+    plot_log_value_distributions = True
     plot_log_value_chng_distributions = True
 
     output_files = True
@@ -74,10 +75,13 @@ if __name__ == "__main__":
     if plot_log_value_distributions:
         panel_gdf = read_panels(which='full')
         print(panel_gdf.head())
-    
+        print(f"{panel_gdf.shape=}, {panel_gdf.columns.tolist()=}")    
     if plot_log_value_chng_distributions:
         change_panel_gdf = read_panels(which='change')
         print(change_panel_gdf.head())
+        print(f"{change_panel_gdf.shape=}, {change_panel_gdf.columns.tolist()=}")
+
+    sys.exit('later.') 
     #-----------------------------------------------------------------------------------
     print('-'*150, '\n')
     #-----------------------------------------------------------------------------------
