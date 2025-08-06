@@ -40,6 +40,9 @@ def merge_layers(
     for fc in all_fcs:
         # Parse start and end year
         start_yr, end_yr = fc.split("_")[-2:]
+        if int(end_yr) > int(start_yr):
+            end_yr, start_yr = start_yr, end_yr  # Ensure start is always less than end
+
         print(f"Processing {fc} for years {start_yr} to {end_yr}")
 
         year_id = fc.replace(prefix, "")

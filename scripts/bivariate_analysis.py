@@ -23,10 +23,8 @@ print(arcstr(GBD_DIR))
 # sys.exit()
 
 lag_panel_name = "base_lag_panel"
-temp_path = Path(__file__).resolve().parents[2] / "temp"
-temp_path.mkdir(exist_ok=True)
-temp_gpkg = temp_path / "lag_panel.gpkg"
-lag_panel_gpkg_path = arcstr(temp_gpkg / "lag_panel")
+lag_panel_gpkg_path = arcstr(GBD_DIR / lag_panel_name)
+print(f"lag_panel_gpkg_path: {lag_panel_gpkg_path}")
 
 NEIGHBORHOOD_SETTINGS = [
     # {"type": "K_NEAREST_NEIGHBORS", "param": 4},
@@ -127,39 +125,201 @@ def run_bivariate_analysis_for_setting(lag_panel_cols, response_var, explan_var,
             local_weighting_scheme="UNWEIGHTED",
             num_permutations=199
         )
+
+        info(f"Cleaning output for {year} vs {lag_year} ({suffix})...")
+        clean_bivariate_output(
+            out_path=out_path,
+            analysis_field1=analysis_field1,
+            analysis_field2=analysis_field2,
+            year=year,
+            lag_year=lag_year,
+            nb_setting=suffix,
+            lag_panel_path=lag_panel_gpkg_path
+        )
+
     except Exception as e:
         error(f"Failed spatial association for {year} vs {lag_year} ({suffix}): {e}")
-        print(lag_panel_gpkg_path)
-        print(analysis_field1)
-        print(analysis_field2)
-        print(out_path)
-        print(nb_type, nb_param)
 
-        
-        # sys.exit()
         return None
-    # try:
-    #     # Now join fields from lag_panel_name into the output
-    #     join_fields = ["ACCTID", "NEIGHBORHOOD", "GEOGCODE"]
-    #     # print(f"Joining fields {join_fields} from {lag_panel_name} to {out_path}")
-    #     arcpy.management.JoinField(
-    #         in_data=out_path,
-    #         in_field="OBJECTID",
-    #         join_table=lag_panel_gpkg_path,
-    #         join_field="OBJECTID",
-    #         fields=join_fields
-    #     )
-    # except Exception as e:
-    #     warn(f"Analysis completed but failed to join fields to {out_path}: {e}")
-    #     return None
-    
+        
     success(f"{year} vs {lag_year} ({suffix}) --> Output: {out_path}")
     return output_name_base2
         
+def clean_bivariate_output(out_path, analysis_field1, analysis_field2, year, lag_year, nb_setting, lag_panel_path):
+    """
+    Clean up the BivariateSpatialAssociation output feature class by:
+    1. Spatially joining key identifiers from the original lag panel
+    2. Adding metadata fields
+    3. Removing unnecessary fields
+    4. Renaming fields for clarity
+    
+    Parameters:
+    -----------
+    out_path : str
+        Path to the BivariateSpatialAssociation output feature class
+    analysis_field1 : str
+        Name of the response variable field (e.g., "LOG_REAL_NFMTTLVL_CHNG_2020")
+    analysis_field2 : str
+        Name of the explanatory variable field (e.g., "LOG_REAL_NFMIMPVL_CHNG_2019")
+    year : int
+        Analysis year
+    lag_year : int
+        Lag year for explanatory variable
+    nb_setting : str
+        Neighborhood setting identifier (e.g., "k_nearest_neighbors50")
+    lag_panel_path : str
+        Path to the original lag panel feature class for spatial join
+    """
 
-def bivariate_neighborhood_pipeline(lag_panel_gdf=None, neighborhood_definitions=NEIGHBORHOOD_SETTINGS, x_var_to_test=DEPENDENT_VARS_BASE, n_proc=1):
+    info(f"Cleaning bivariate output: {out_path}")
+
+    # Step 1: Create a temporary feature class for spatial join
+    try:
+        temp_join_fc = out_path + "_temp_join"
+        if arcpy.Exists(temp_join_fc):
+            arcpy.management.Delete(temp_join_fc)
+        
+        # Spatial join to get ACCTID, GEOGCODE, NEIGHBORHOOD back
+        info("Performing spatial join to recover parcel identifiers...")
+        arcpy.analysis.SpatialJoin(
+            target_features=out_path,
+            join_features=lag_panel_path,
+            out_feature_class=temp_join_fc,
+            join_operation="JOIN_ONE_TO_ONE",
+            join_type="KEEP_ALL",
+            match_option="INTERSECT"
+        )
+    except Exception as e:
+        error(f"Spatial join failed for {out_path}: {e}")
+        return None
+    info(f"Spatial join completed: {temp_join_fc}")
+    try:
+        # Step 2: Add metadata fields to temp feature class
+        info("Adding metadata fields...")
+        metadata_fields = [
+            ("ANALYSIS_YEAR", "SHORT"),
+            ("LAG_YEAR", "SHORT"),
+            ("NB_SETTING", "TEXT", 50),
+            ("RESPONSE_VAR", "TEXT", 50),
+            ("EXPLAN_VAR", "TEXT", 50)
+        ]
+
+        for field_info in metadata_fields:
+            field_name = field_info[0]
+            field_type = field_info[1]
+            field_length = field_info[2] if len(field_info) > 2 else None
+            
+            if field_length:
+                arcpy.management.AddField(temp_join_fc, field_name, field_type, field_length=field_length)
+            else:
+                arcpy.management.AddField(temp_join_fc, field_name, field_type)
+
+        # Step 3: Populate metadata fields
+        info("Populating metadata...")
+        response_var_short = short_name(analysis_field1.rsplit('_', 1)[0])  # Remove year suffix
+        explan_var_short = short_name(analysis_field2.rsplit('_', 1)[0])   # Remove year suffix
+        
+        # Step 3: Populate metadata fields
+        info("Populating metadata...")
+        response_var_full = analysis_field1.rsplit('_', 1)[0]  # Remove year suffix - keep full name
+        explan_var_full = analysis_field2.rsplit('_', 1)[0]    # Remove year suffix - keep full name
+        
+        with arcpy.da.UpdateCursor(temp_join_fc, 
+                                    ["ANALYSIS_YEAR", "LAG_YEAR", "NB_SETTING", "RESPONSE_VAR", "EXPLAN_VAR"]) as cursor:
+            for row in cursor:
+                row[0] = year
+                row[1] = lag_year
+                row[2] = nb_setting
+                row[3] = response_var_full  # Store full variable name
+                row[4] = explan_var_full    # Store full variable name
+                cursor.updateRow(row)
+        
+        # Step 4: Define fields to keep
+        essential_fields = [
+            'OBJECTID', 'Shape',        # Required ArcGIS fields
+            'ACCTID',                   # Parcel identifier  
+            'GEOGCODE',                 # Geographic code
+            'NEIGHBORHOOD',             # Neighborhood identifier
+            'SOURCE_ID',                # From bivariate analysis
+            'LOCAL_L',                  # Local bivariate statistic
+            'P_VALUE',                  # P-value from bivariate analysis
+            'SIG_LEVEL',                # Significance level
+            'ASSOC_CAT',                # Association category (HH, HL, LH, LL)
+            'NUM_NBRS',                 # Number of neighbors used
+            'ANALYSIS_YEAR',            # Metadata fields
+            'LAG_YEAR',
+            'NB_SETTING',
+            'RESPONSE_VAR',
+            'EXPLAN_VAR'
+        ]
+        print(f"Fields in temp file: {arcpy.ListFields(temp_join_fc)}")
+        # Step 5: Get list of fields to delete
+        existing_fields = [f.name for f in arcpy.ListFields(temp_join_fc)]
+        fields_to_delete = [f for f in existing_fields if f not in essential_fields]
+        
+        # Remove fields that are required by ArcGIS or don't exist
+        protected_fields = ['OBJECTID', 'Shape', 'OBJECTID_1', 'Shape_Length', 'Shape_Area']
+        fields_to_delete = [f for f in fields_to_delete if f not in protected_fields]
+        
+        if fields_to_delete:
+            info(f"Removing {len(fields_to_delete)} unnecessary fields...")
+            try:
+                arcpy.management.DeleteField(temp_join_fc, fields_to_delete)
+            except Exception as e:
+                warn(f"Could not delete some fields: {e}")
+        
+        # Step 6: Replace original with cleaned version
+        info("Replacing original with cleaned version...")
+        if arcpy.Exists(out_path):
+            arcpy.management.Delete(out_path)
+        arcpy.management.Rename(temp_join_fc, out_path)
+        
+        # Step 7: Optional field renaming for clarity
+        field_mappings = {
+            'LOCAL_L': 'BIVAR_STAT',
+            'P_VALUE': 'BIVAR_PVALUE', 
+            'SIG_LEVEL': 'SIGNIF_LEVEL',
+            'ASSOC_CAT': 'CLUSTER_TYPE',
+            'NUM_NBRS': 'N_NEIGHBORS'
+        }
+        
+        for old_name, new_name in field_mappings.items():
+            if len([f for f in arcpy.ListFields(out_path) if f.name == old_name]) > 0:
+                try:
+                    arcpy.management.AlterField(out_path, old_name, new_name, new_name)
+                except Exception as e:
+                    warn(f"Could not rename {old_name} to {new_name}: {e}")
+        
+        success(f"Successfully cleaned bivariate output: {out_path}")
+        
+        # Step 8: Print summary of cleaned feature class
+        result_count = int(arcpy.management.GetCount(out_path)[0])
+        final_fields = [f.name for f in arcpy.ListFields(out_path)]
+        info(f"Cleaned feature class has {result_count} records and {len(final_fields)} fields")
+        info(f"Final fields: {', '.join(final_fields)}")
+    except Exception as e:
+        error(f"Failed to clean bivariate output {out_path}: {e}")
+        # Clean up temp files if they exist
+        if arcpy.Exists(temp_join_fc):
+            try:
+                arcpy.management.Delete(temp_join_fc)
+            except:
+                pass
+        raise
+
+
+def bivariate_neighborhood_pipeline(lag_panel_gdf: gpd.GeoDataFrame = None, 
+                                    panel_name: str = lag_panel_name, 
+                                    neighborhood_definitions=NEIGHBORHOOD_SETTINGS, 
+                                    explan_vars=DEPENDENT_VARS_BASE, n_proc=1):
+    """
+    Main pipeline for running bivariate neighborhood analysis.
+    - lag_panel_gdf: Optional GeoDataFrame of the lag panel. If None, will read the feature class 'panel_name'.
+    """
     if lag_panel_gdf is None:
-        lag_panel_path = arcstr(GBD_DIR / lag_panel_name)
+        #default to reading from the lag panel feature class
+
+        lag_panel_path = arcstr(GBD_DIR / panel_name)
         if not arcpy.Exists(lag_panel_path):
             error(f"Lag panel feature class '{lag_panel_path}' does not exist.")
             exit(1)
@@ -168,9 +328,6 @@ def bivariate_neighborhood_pipeline(lag_panel_gdf=None, neighborhood_definitions
         lag_panel_gdf = gpd.read_file(str(GBD_DIR), layer=lag_panel_name)
         info(f"lag_panel shape: {lag_panel_gdf.shape=}")
     
-    lag_panel_gdf.to_file(temp_gpkg, layer="lag_panel", driver="GPKG")
-
-
     lag_panel_cols = lag_panel_gdf.columns.tolist()
 
     response_var = BASE_VAR
@@ -178,7 +335,7 @@ def bivariate_neighborhood_pipeline(lag_panel_gdf=None, neighborhood_definitions
     merge_plan = [] # Store output names for merging later
     tasks = []
 
-    for explan_var in x_var_to_test:
+    for explan_var in explan_vars:
         # expl_var = var.split('_')[2]
         info(f"Running bivariate analysis for {response_var} vs {explan_var}...")
         for setting in neighborhood_definitions:
@@ -281,7 +438,9 @@ if __name__ == "__main__":
     print(f"Columns in lag panel: {lag_panel_gdf.columns.tolist()}")
 
     print("Starting bivariate neighborhood analysis...")
-    outputs = bivariate_neighborhood_pipeline(lag_panel_gdf=lag_panel_gdf, n_proc=1)
+    outputs = bivariate_neighborhood_pipeline(lag_panel_gdf=lag_panel_gdf, n_proc=1,
+                                              neighborhood_definitions=NEIGHBORHOOD_SETTINGS, 
+                                              explan_vars=DEPENDENT_VARS_BASE)
 
     # Step 2: Evaluate significant counts
     if outputs:

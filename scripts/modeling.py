@@ -37,6 +37,13 @@ if __name__ == "__main__":
     log_file = LOGS_DIR / f"modeling_{timestamp}.log"
     logger = Logger(log_file)
 
+    biv_landchng_gdf = gpd.read_file(str(GBD_DIR), layer=biv_knn50_lnd)
+    print(f"biv_landchng_gdf shape: {biv_landchng_gdf.shape}")
+    print(f"biv_landchng_gdf columns: {biv_landchng_gdf.columns.tolist()}")
+
+    sys.exit("Exiting script after initial checks. Please ensure the bivariate layers are correct before proceeding.")
+
+
     process_step("Step 1: SpatialJoin LND + IMP")
     arcpy.analysis.SpatialJoin(
         target_features=arcstr(GBD_DIR / biv_knn50_lnd),
