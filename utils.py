@@ -70,6 +70,17 @@ def warn(msg): _log("WARNING", Fore.YELLOW, msg)
 def error(msg): _log("ERROR", Fore.RED, msg)
 def success(msg): _log("SUCCESS", Fore.GREEN, msg)
 
+def extract_base_var(path: Path, pattern: re.Pattern) -> str:
+    """
+    From morans_i_results_<base_var>_<YYYYMMDD_HHMM>.csv -> <base_var>
+    """
+    stem = path.stem  # no extension
+    print(f"{stem=}")
+    m = pattern.match(stem)
+    if not m:
+        raise ValueError(f"Unexpected filename pattern: {path.name}")
+    return m.group(1)  # base_var
+
 if __name__ == "__main__":
     now = datetime.now()
     timestamp = now.strftime("%Y%m%d %H%M")

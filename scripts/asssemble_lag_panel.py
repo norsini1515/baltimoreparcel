@@ -20,50 +20,148 @@ YEARS = ALL_YEARS  # or subset like range(2010, 2020)
 ############################################
 FULL_PANEL_GEOPKG = "Baci_full_panel.gpkg"
 FULL_PANEL_DIR = get_year_gpkg_dir("full_panel")
-# Define layer names for full and change panels
-# These should match the names used in the GPKG or GDB
-full_panel_name = "full_panel"  # Name for full panel layer in GPKG
-change_panel_name = "full_change_panel"  # Name for change panel layer in GPKG
-VARIABLE = "LOG_REAL_NFMTTLVL_CHNG"  # Variable to analyze for hotspots
 
-lag_panel_name = "base_lag_panel"
 ############################################
-def read_panels(which: str = "both"):
+def read_gdb_layer(layer_name: str) -> gpd.GeoDataFrame:
     """
-    Read full and/or change panel GeoDataFrames from the geodatabase.
+    Read a layer from the FileGDB.
+    """
+    info(f"Reading layer: {layer_name}")
+    try:
+        return gpd.read_file(str(GBD_DIR), layer=layer_name)
+    except Exception as e:
+        print(f"Error reading layer {layer_name}: {e}")
+
+def assemble_lag_panel(
+    df: gpd.GeoDataFrame,
+    variables: list[str],
+    id_field: str = "ACCTID",
+    col_field: str = "END_YR"
+) -> gpd.GeoDataFrame:
+    """
+    Assemble a lag panel by pivoting multiple variables.
 
     Parameters:
     -----------
-    which : str
-        One of "full", "change", or "both" (default: "both")
+    df : GeoDataFrame
+        Input change or bivariate panel.
+    variables : list of str
+        List of variable names to pivot into wide format.
+    id_field : str
+        Unique ID field (e.g., ACCTID).
+    col_field : str
+        Column to pivot across (e.g., END_YR).
 
     Returns:
     --------
-    tuple
-        Depending on `which`, returns:
-        - ("full") → full_panel_gdf
-        - ("change") → change_panel_gdf
-        - ("both") → (full_panel_gdf, change_panel_gdf)
+    GeoDataFrame: Merged wide-format lag panel.
     """
-    which = which.lower()
-    if which not in {"full", "change", "both"}:
-        raise ValueError("Argument `which` must be one of: 'full', 'change', 'both'")
+    for i, var in enumerate(variables):
+        if var not in df.columns:
+            warn(f"Variable '{var}' not found in layer. Skipping.")
+            continue
 
-    result = ()
+        info(f"Pivoting variable: {var}")
+        pivoted = pivot_panel(
+            panel_gdf=df,
+            value_field=var,
+            id_field=id_field,
+            col_field=col_field,
+            aggfunc="first"
+        )
 
-    if which in {"full", "both"}:
-        print("Reading full panel...")
-        full_panel_gdf = gpd.read_file(str(GBD_DIR), layer=full_panel_name)
-        info(f"Full panel shape: {full_panel_gdf.shape=}")
-        result += (full_panel_gdf,)
+        if i == 0:
+            lag_df = pivoted.copy()
+        else:
+            lag_df = lag_df.merge(pivoted.drop(columns=["geometry"]), on=id_field, how="outer")
 
-    if which in {"change", "both"}:
-        print("Reading change panel...")
-        change_panel_gdf = gpd.read_file(str(GBD_DIR), layer=change_panel_name)
-        info(f"Change panel shape: {change_panel_gdf.shape=}")
-        result += (change_panel_gdf,)
+        info(f"Merged '{var}' — shape: {lag_df.shape}")
 
-    return result[0] if which in {"full", "change"} else result
+    return lag_df
+
+def attach_neighborhood_metadata(
+    lag_df: gpd.GeoDataFrame,
+    source_df: gpd.GeoDataFrame,
+    id_field: str = "ACCTID"
+) -> gpd.GeoDataFrame:
+    """
+    Attach GEOGCODE and NEIGHBORHOOD to the lag panel.
+
+    Parameters:
+    -----------
+    lag_df : GeoDataFrame
+        Lag panel in wide format.
+    source_df : GeoDataFrame
+        Source panel with neighborhood info.
+
+    Returns:
+    --------
+    GeoDataFrame: Enriched lag panel with metadata.
+    """
+    meta_cols = ["GEOGCODE", id_field, "NEIGHBORHOOD"]
+    meta_df = source_df[meta_cols].drop_duplicates()
+    lag_df = lag_df.merge(meta_df, on=id_field, how="left")
+    return lag_df
+
+def write_lag_outputs(
+    lag_df: gpd.GeoDataFrame,
+    layer_name: str
+) -> None:
+    """
+    Write lag panel to GPKG and FileGDB.
+    """
+    write_gpkg_layer(
+        gdf=lag_df,
+        year="custom_lag",
+        name=FULL_PANEL_GEOPKG,
+        directory=FULL_PANEL_DIR,
+        layer=layer_name
+    )
+
+    process_step("Exporting lag panel to FileGDB...")
+    temp_fc_path = export_to_geodb(
+        input_gpkg_path=FULL_PANEL_DIR / FULL_PANEL_GEOPKG,
+        layer_name=layer_name,
+        gdb_path=GBD_DIR,
+        out_feature_name=layer_name
+    )
+
+    success(f"Exported to FileGDB: {temp_fc_path}")
+
+def run_lag_panel_pipeline(
+    input_layer: str,
+    variables: list[str],
+    output_layer: str,
+    id_field: str = "ACCTID",
+    col_field: str = "END_YR"
+):
+    """
+    Run the full lag panel workflow.
+
+    Parameters:
+    -----------
+    input_layer : str
+        Name of the input layer in the GDB.
+    variables : list of str
+        Variables to include in lag panel.
+    output_layer : str
+        Output layer name for lag panel.
+    """
+    info(f"Running lag panel pipeline for layer: {input_layer} for variables: {variables}")
+    change_panel_gdf = read_gdb_layer(input_layer)
+
+    process_step("Assembling lag panel...")
+    lag_df = assemble_lag_panel(change_panel_gdf, variables, id_field, col_field)
+
+    process_step("Attaching neighborhood metadata...")
+    lag_df = attach_neighborhood_metadata(lag_df, change_panel_gdf, id_field)
+
+    info(f"Final lag DataFrame shape: {lag_df.shape}")
+    info(f"Columns: {lag_df.columns.tolist()}")
+
+    process_step("Writing lag panel outputs...")
+    write_lag_outputs(lag_df, output_layer)
+
 
 if __name__ == "__main__":
     arcpy.env.overwriteOutput = True
@@ -73,54 +171,40 @@ if __name__ == "__main__":
     timestamp = now.strftime("%Y%m%d %H%M")
     log_file = LOGS_DIR / f"assemble_lags_{timestamp}.log"
     logger = Logger(log_file)
-
-    # Read full and change panels
-    change_panel_gdf = read_panels("change")
-    year_pairs = change_panel_gdf[["START_YR", "END_YR"]].drop_duplicates().values.tolist()
-
-    data_columns = ['LOG_REAL_NFMTTLVL_CHNG', 'LOG_REAL_NFMIMPVL_CHNG', 'LOG_REAL_NFMLNDVL_CHNG', 'ZONING_CHNG', 'OWNNAME1_CHNG']
-
-    for i, variable in enumerate(data_columns):
-        if variable not in change_panel_gdf.columns:
-            error(f"Variable '{variable}' not found in change panel. Skipping lag assembly for this variable.")
-            continue
-
-        print(f"Processing lag panel for variable: {variable}")
-        variable_lag_df = pivot_panel(panel_gdf=change_panel_gdf, value_field=variable,
-                             id_field="ACCTID", col_field="END_YR",
-                             aggfunc="first")
-
-        #merge change data
-        if i == 0:
-            lag_df = variable_lag_df.copy()
-        else:
-            lag_df = lag_df.merge(variable_lag_df.drop(columns=['geometry']), on=['ACCTID'], how="outer")
-        print(f"Merged lag {i} DataFrame shape: {lag_df.shape=}")
     
-    print(f"Final lag DataFrame shape: {lag_df.shape=}")
-    
-    print('merging neighborhood data...')
-    neighborhood_df = change_panel_gdf[['GEOGCODE', 'ACCTID', 'NEIGHBORHOOD']].drop_duplicates()
-    print(f"Neighborhood DataFrame shape: {neighborhood_df.shape=}")
-    lag_df = lag_df.merge(neighborhood_df, on='ACCTID', how='left')
+    # lag_panel_name = "base_lag_panel"
+    # change_panel_name = "full_change_panel"
+    # run_lag_panel_pipeline(
+    #     input_layer=change_panel_name,
+    #     variables=[
+    #         "LOG_REAL_NFMTTLVL_CHNG",
+    #         "LOG_REAL_NFMIMPVL_CHNG",
+    #         "OWNNAME1_CHNG"
+    #     ],
+    #     output_layer=lag_panel_name
+    # )
 
-    print(f"After merging neighborhood data: {lag_df.shape=}")
-    print(f"Columns in final lag DataFrame: {lag_df.columns.tolist()}")
-    
-    # Write lag panel to GPKG
-    write_gpkg_layer(
-        gdf=lag_df,
-        year='base_lag_panel',
-        name=FULL_PANEL_GEOPKG,
-        directory=FULL_PANEL_DIR,
-        layer=lag_panel_name
+    # Assemble bivariate analysis panels
+    # input_layer = "biv_TTLCHG_IMPCHG_knn50_merged"
+    # output_layer = "biv_TTLCHG_IMPCHG_knn50_merged_panel"
+    # run_lag_panel_pipeline(
+    #     input_layer=input_layer,
+    #     variables=[
+    #         "BIVAR_PVALUE",
+    #         "CLUSTER_TYPE",
+    #     ],
+    #     output_layer=output_layer
+    # )
+    input_layer = "full_panel"
+    # output_layer = "LOG_REAL_NFMTTLVL_panel"
+    output_layer = "LOG_REAL_NFMIMPVL_panel"
+    run_lag_panel_pipeline(
+        input_layer=input_layer,
+        variables=[
+            "LOG_REAL_NFMIMPVL",
+        ],
+        col_field="YEAR",
+        output_layer=output_layer
     )
-    print('Exporting to project geodatabase...')
-    # Step 2: Export to FileGDB using ArcPy
-    temp_fc_path = export_to_geodb(
-        input_gpkg_path=FULL_PANEL_DIR / FULL_PANEL_GEOPKG,
-        layer_name=lag_panel_name,
-        gdb_path=GBD_DIR,
-        out_feature_name=lag_panel_name
-    )
-    print(f"Exported {lag_panel_name} to FileGDB at {temp_fc_path}")
+
+    success(f"Completed lag panel assembly. Output saved to: {GBD_DIR / output_layer}")

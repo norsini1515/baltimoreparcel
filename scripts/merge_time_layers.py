@@ -31,16 +31,16 @@ def merge_layers(
         if "_with_time" not in fc and fc != output_fc
     ]
     if not all_fcs:
-        error(f"No layers found with prefix '{prefix}'.")
+        error(f"No layers found with prefix '{prefix}'. Returning. . .")
         return
 
     info(f"Found {len(all_fcs)} layers with prefix '{prefix}'")
 
     temp_fcs = []
-    for fc in all_fcs:
+    for i, fc in enumerate(all_fcs):
         # Parse start and end year
-        start_yr, end_yr = fc.split("_")[-2:]
-        if int(end_yr) > int(start_yr):
+        start_yr, end_yr = fc.split("_")[-2:] #prefix_<start_year>_<end_year> start_year and end_year are the last two parts
+        if int(end_yr) < int(start_yr):
             end_yr, start_yr = start_yr, end_yr  # Ensure start is always less than end
 
         print(f"Processing {fc} for years {start_yr} to {end_yr}")
@@ -57,11 +57,18 @@ def merge_layers(
         arcpy.management.CalculateField(temp_fc, "START_YR", str(start_yr), "PYTHON3")
         arcpy.management.CalculateField(temp_fc, "END_YR", str(end_yr), "PYTHON3")
         temp_fcs.append(temp_fc)
+        
+        process_step(f"Finished processing layer {i + 1} of {len(all_fcs)}")
 
     info(f"Merging {len(temp_fcs)} layers into {output_fc}")
     arcpy.management.Merge(temp_fcs, output_fc)
     print('merged.')
-    # arcpy.management.DeleteFeatures(temp_fcs)
+    
+    # Clean up temporary feature classes
+    info(f"Cleaning up temporary feature classes...")
+    for tf in temp_fcs:
+        arcpy.management.Delete(tf)
+
     if convert_time:
         fields = [f.name for f in arcpy.ListFields(output_fc)]
         info(f"Fields in {output_fc}: {fields}")

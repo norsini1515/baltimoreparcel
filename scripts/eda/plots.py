@@ -1,8 +1,13 @@
+import datetime
+import re
 import geopandas as gpd
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+from typing import Optional, Tuple, Union
 
+from baltimoreparcel.directories import DATA_DIR, FIGS_DIR
 def timeseries_histogram(
     value_gdf: gpd.GeoDataFrame, 
     value_field: str = "NFMTTLVL",
@@ -131,3 +136,79 @@ def timeseries_histogram(
         print(f"[Saved] Histogram grid to: {save_path}")
     if show_plot:
         plt.show()
+
+def plot_line(
+    df: pd.DataFrame,
+    x: str,
+    y: str,
+    group: Optional[str] = None,
+    title: Optional[str] = None,
+    xlabel: Optional[str] = None,
+    ylabel: Optional[str] = None,
+    y_zero: bool = False,
+    markers: bool = True,
+    legend_title: Optional[str] = None,
+    figsize: Tuple[int, int] = (10, 6),
+    y_limits: Optional[Tuple[float, float]] = None,
+    save_path: Optional[Union[str, Path]] = None,
+    # secondary axis
+    y2: Optional[str] = None,
+    y2label: Optional[str] = None,
+    y2_limits: Optional[Tuple[float, float]] = None,
+    # new: external axes
+    ax: Optional[plt.Axes] = None,
+    ax2: Optional[plt.Axes] = None,
+):
+    if df.empty:
+        raise ValueError("plot_line received an empty dataframe")
+
+    created_fig = False
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+        created_fig = True
+    else:
+        fig = ax.figure
+
+    data = df.sort_values(x)
+
+    # primary axis
+    if group and group in data.columns:
+        for key, sub in data.groupby(group):
+            ax.plot(sub[x], sub[y], marker="o" if markers else None, label=str(key))
+        ax.legend(title=legend_title or group, loc="upper left")
+    else:
+        ax.plot(data[x], data[y], marker="o" if markers else None, label=y)
+
+    if y_zero:
+        ax.axhline(0, linewidth=1, linestyle="--")
+
+    ax.set_xlabel(xlabel or x)
+    ax.set_ylabel(ylabel or y, color="tab:blue")
+    ax.tick_params(axis="y", labelcolor="tab:blue")
+    if y_limits:
+        ax.set_ylim(*y_limits)
+    if title:
+        ax.set_title(title)
+
+    # secondary axis
+    if y2:
+        ax2 = ax2 or ax.twinx()
+        if group and group in data.columns:
+            for key, sub in data.groupby(group):
+                ax2.plot(sub[x], sub[y2], marker="s" if markers else None, linestyle="--", label=str(key), color="tab:red")
+        else:
+            ax2.plot(data[x], data[y2], marker="s" if markers else None, linestyle="--", color="tab:red", label=y2)
+        ax2.set_ylabel(y2label or y2, color="tab:red")
+        ax2.tick_params(axis="y", labelcolor="tab:red")
+        if y2_limits:
+            ax2.set_ylim(*y2_limits)
+
+    fig.tight_layout()
+
+    if save_path:
+        save_path = Path(save_path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+
+    # return fig only if we created it
+    return fig if created_fig else None

@@ -6,7 +6,7 @@ GBD_DIR = PROJECT_DIR / "BaltimoreParcelProject.gdb"
 DATA_DIR = PROJECT_DIR / "data"
 RAW_DIR = DATA_DIR / "raw"
 FILTERED_DIR = DATA_DIR / "filtered"
-
+FIGS_DIR = DATA_DIR / "figures"
 LOGS_DIR = PROJECT_DIR / "logs"
 
 def ensure_dir(path: Path) -> Path:
