@@ -187,24 +187,32 @@ if __name__ == "__main__":
     # Assemble bivariate analysis panels
     # input_layer = "biv_TTLCHG_IMPCHG_knn50_merged"
     # output_layer = "biv_TTLCHG_IMPCHG_knn50_merged_panel"
-    # run_lag_panel_pipeline(
-    #     input_layer=input_layer,
-    #     variables=[
-    #         "BIVAR_PVALUE",
-    #         "CLUSTER_TYPE",
-    #     ],
-    #     output_layer=output_layer
-    # )
-    input_layer = "full_panel"
-    # output_layer = "LOG_REAL_NFMTTLVL_panel"
-    output_layer = "LOG_REAL_NFMIMPVL_panel"
+    # input_layer = "biv_TTLCHG_LNDCHG_knn50_merged"
+    # output_layer = "biv_TTLCHG_LNDCHG_knn50_merged_panel"
+    input_layer = "biv_TTLCHG_ZCHG_knn50_merged"
+    output_layer = "biv_TTLCHG_ZCHG_knn50_merged_panel"
     run_lag_panel_pipeline(
         input_layer=input_layer,
         variables=[
-            "LOG_REAL_NFMIMPVL",
+            "BIVAR_PVALUE",
+            "CLUSTER_TYPE",
+            "BIVAR_STAT"
         ],
-        col_field="YEAR",
         output_layer=output_layer
     )
+   
+   
+   
+    # input_layer = "full_panel"
+    # # output_layer = "LOG_REAL_NFMTTLVL_panel"
+    # output_layer = "LOG_REAL_NFMIMPVL_panel"
+    # run_lag_panel_pipeline(
+    #     input_layer=input_layer,
+    #     variables=[
+    #         "LOG_REAL_NFMIMPVL",
+    #     ],
+    #     col_field="YEAR",
+    #     output_layer=output_layer
+    # )
 
     success(f"Completed lag panel assembly. Output saved to: {GBD_DIR / output_layer}")

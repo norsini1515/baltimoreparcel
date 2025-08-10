@@ -641,13 +641,15 @@ if __name__ == "__main__":
     
     # Configure Moran's I analysis
     morans_i_config = AnalysisConfig(
-        lag_panel_name="base_lag_panel",
+        # lag_panel_name="base_lag_panel",
         # lag_panel_name="biv_TTLCHG_IMPCHG_knn50_merged_panel",
+        # lag_panel_name="biv_TTLCHG_LNDCHG_knn50_merged_panel",
+        lag_panel_name="biv_TTLCHG_ZCHG_knn50_merged_panel",
         # lag_panel_name="LOG_REAL_NFMTTLVL_panel",
         # lag_panel_name="LOG_REAL_NFMIMPVL_panel",
-        # base_var="BIVAR_PVALUE",
+        base_var="BIVAR_STAT",
         # base_var="LOG_REAL_NFMTTLVL_CHNG",
-        base_var="LOG_REAL_NFMIMPVL_CHNG",
+        # base_var="LOG_REAL_NFMIMPVL_CHNG",
         # base_var="LOG_REAL_NFMIMPVL",
         dependent_vars=None,  # Not used for Moran's I
         neighborhood_settings=[

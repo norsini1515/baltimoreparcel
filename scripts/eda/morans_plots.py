@@ -19,9 +19,11 @@ if __name__ == '__main__':
     # data_paths = [DATA_DIR / "morans_i_results_LOG_REAL_NFMIMPVL_20250809_1106.csv",
     #         DATA_DIR / "morans_i_results_LOG_REAL_NFMTTLVL_20250809_0249.csv",
     #         ]
-    data_paths = [DATA_DIR / "morans_i_results_LOG_REAL_NFMTTLVL_CHNG_20250809_1543.csv",
-            DATA_DIR / "morans_i_results_LOG_REAL_NFMIMPVL_CHNG_20250809_1549.csv",
-            ]
+    # data_paths = [DATA_DIR / "morans_i_results_LOG_REAL_NFMTTLVL_CHNG_20250809_1543.csv",
+    #         DATA_DIR / "morans_i_results_LOG_REAL_NFMIMPVL_CHNG_20250809_1549.csv",
+    #         ]
+    # data_paths = [DATA_DIR / "morans_i_results_BIVAR_STAT_20250809_1642.csv",]
+    data_paths = [DATA_DIR / "morans_i_results_BIVAR_STAT_20250809_1758.csv",]
     base_name = "morans_i_results_"
     FILENAME_RE = re.compile(
         rf"^{re.escape(base_name)}(.+?)_(\d{{8}}_\d{{4}})$"
