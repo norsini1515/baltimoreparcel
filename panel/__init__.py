@@ -1,15 +1,24 @@
-# baltimoreparcel/engineer_panel.py
-# Backward-compatibility shim — prefer: from baltimoreparcel import panel
-from baltimoreparcel.panel import *  # noqa: F401,F403
+# baltimoreparcel/panel/__init__.py
+"""
+Panel feature engineering: CPI adjustment, log transforms, change calculation,
+and spatial enrichment for the Baltimore parcel panel.
+"""
+import numpy as np
+import geopandas as gpd
+import pandas as pd
 
-def to_real_data(data:pd.Series, prices:pd.DataFrame):
+from ..directories import GBD_DIR
+
+
+def to_real_data(data: pd.Series, prices: pd.DataFrame):
     return data / prices['Price']
 
-def log_value(gdf: gpd.GeoDataFrame, value_field:str) -> gpd.GeoDataFrame:
-    # Example: create a log-transformed value column
+
+def log_value(gdf: gpd.GeoDataFrame, value_field: str) -> gpd.GeoDataFrame:
     gdf = gdf.copy()
     gdf[f"LOG_{value_field}"] = np.log(gdf[value_field].replace(0, np.nan))
     return gdf
+
 
 def calculate_change(
     gdf: gpd.GeoDataFrame,
@@ -38,9 +47,7 @@ def calculate_change(
         [col for col in gdf.columns if col.startswith(f"{value_prefix}_")],
         key=lambda x: int(x.split("_")[-1])
     )
-    # print(f"{value_cols=}")
     years = [int(col.split("_")[-1]) for col in value_cols]
-    # print(f"{years=}")
 
     result_frames = []
 
@@ -83,16 +90,23 @@ def calculate_change(
         result_frames.append(out)
 
     result = pd.concat(result_frames, ignore_index=True)
-    
     return gpd.GeoDataFrame(result, geometry=geom_col, crs=gdf.crs)
 
-def enrich_change_gdf(change_gdf: gpd.GeoDataFrame, base_gdf: gpd.GeoDataFrame, enrich_fields: list[str]) -> gpd.GeoDataFrame:
+
+def enrich_change_gdf(
+    change_gdf: gpd.GeoDataFrame,
+    base_gdf: gpd.GeoDataFrame,
+    enrich_fields: list[str]
+) -> gpd.GeoDataFrame:
     enrich_df = base_gdf[["ACCTID"] + enrich_fields].drop_duplicates()
     return change_gdf.merge(enrich_df, on="ACCTID", how="left")
 
-def summarize_field(change_gdf: gpd.GeoDataFrame, 
-                    value_field: str = "LOG_NFMTTLVL_CHNG",
-                    group_fields: list[str] = ["START_YR", "END_YR"]) -> pd.DataFrame:
+
+def summarize_field(
+    change_gdf: gpd.GeoDataFrame,
+    value_field: str = "LOG_NFMTTLVL_CHNG",
+    group_fields: list[str] = ["START_YR", "END_YR"]
+) -> pd.DataFrame:
     df = (
         change_gdf
         .groupby(group_fields)
@@ -109,44 +123,22 @@ def summarize_field(change_gdf: gpd.GeoDataFrame,
     )
     df["net_growth"] = df["pos"] - df["neg"]
     df["span_years"] = df["END_YR"] - df["START_YR"]
-
     df["mean_ann"] = df["mean"] / df["span_years"]
     df["median_ann"] = df["median"] / df["span_years"]
-
     return df
+
 
 def spatial_join_with_neighborhoods(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
     Spatially joins a GeoDataFrame with the Baltimore Neighborhood Statistical Areas (NSAs),
     appending only the 'Name' field as 'NEIGHBORHOOD'.
-
-    Parameters:
-    ----------
-    gdf : gpd.GeoDataFrame
-        Input GeoDataFrame (e.g., parcel panel or change panel) with geometries.
-
-    Returns:
-    -------
-    gpd.GeoDataFrame with 'NEIGHBORHOOD' column added.
     """
-    nsa_path = GBD_DIR / "neighborhoods"
-
-    # Read only needed fields from the NSA layer
     nsa_gdf = gpd.read_file(str(GBD_DIR), layer="neighborhoods")[["Name", "geometry"]]\
               .rename(columns={"Name": "NEIGHBORHOOD"})
 
-    # Ensure same CRS
     if gdf.crs != nsa_gdf.crs:
         nsa_gdf = nsa_gdf.to_crs(gdf.crs)
 
-    # Spatial join (left join from parcels to neighborhoods)
     joined = gpd.sjoin(gdf, nsa_gdf, how="left", predicate="intersects")
-
-    # Drop spatial join index column and avoid duplicates
     joined = joined.drop(columns=["index_right"], errors="ignore")
-
     return joined
-
-
-
-

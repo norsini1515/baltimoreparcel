@@ -46,8 +46,7 @@ from datetime import datetime
 import arcpy
 
 from baltimoreparcel.directories import DATA_DIR, LOGS_DIR, GBD_DIR, get_year_gpkg_dir, ensure_dir
-from baltimoreparcel.gis_utils import read_vector_layer, write_gpkg_layer, pivot_panel, export_to_geodb, convert_time_fields
-from baltimoreparcel.engineer_panel import enrich_change_gdf, log_value, calculate_change, to_real_data, spatial_join_with_neighborhoods
+from baltimoreparcel import gis, panel
 from baltimoreparcel.utils import Logger, info, warn, error, success
 from baltimoreparcel.config import ALL_YEARS
 YEARS = ALL_YEARS  # or subset like range(2010, 2020)
@@ -81,7 +80,7 @@ change_panel_name = "full_change_panel" # Name for change panel layer in GPKG
 
 
 def read_full_panel():
-    panel_gdf = read_vector_layer(year='full_panel', name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, layer=full_panel_name)
+    panel_gdf = gis.read_vector_layer(year='full_panel', name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, layer=full_panel_name)
     
     print(f"Read panel has {panel_gdf.shape[0]} rows, {panel_gdf.shape[1]} columns")
     return panel_gdf
@@ -96,7 +95,7 @@ def load_subset_layer(year):
         layer = LAYER_NAME.format(year=year)
         print(f"[{year}] Looking for layer {gpkg_dir} '{layer}' from Baci{year}.gpkg")
         
-        gdf = read_vector_layer(
+        gdf = gis.read_vector_layer(
             year=year,
             name=f"Baci{year}.gpkg",
             directory=gpkg_dir,
@@ -149,7 +148,7 @@ def calculate_real_data(panel_gdf:gpd.GeoDataFrame=None, monetary_values:list[st
 
         panel_gdf = panel_gdf.set_index(['ACCTID', 'YEAR'])
         print(f"\tCalcualting real {val}...")
-        panel_gdf[f'REAL_{val}'] = to_real_data(panel_gdf[val], prices)
+        panel_gdf[f'REAL_{val}'] = panel.to_real_data(panel_gdf[val], prices)
         panel_gdf = panel_gdf.reset_index()
 
     return panel_gdf
@@ -164,7 +163,7 @@ def calculate_log_fields(panel_gdf:gpd.GeoDataFrame=None, log_fields:list[str]=C
     for val in log_fields:
         if val in panel_gdf.columns:
             print(f"\tLogging {val}...")
-            panel_gdf= log_value(panel_gdf, value_field=val)
+            panel_gdf= panel.log_value(panel_gdf, value_field=val)
         else:
             print(f"\tSkipping {val}, not in columns")
     return panel_gdf
@@ -217,15 +216,15 @@ if __name__ == "__main__":
     #write updated panel data file out
     if any(build_panel_components):
         print(f"appending neighborhood information. {panel_gdf.shape=}")
-        panel_gdf = spatial_join_with_neighborhoods(panel_gdf)
+        panel_gdf = panel.spatial_join_with_neighborhoods(panel_gdf)
         print(f"resulting shape: {panel_gdf.shape=}")
 
         print(f"Saving {full_panel_name} data...")
-        write_gpkg_layer(panel_gdf, year='full_panel', name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, layer=full_panel_name)
+        gis.write_gpkg_layer(panel_gdf, year='full_panel', name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, layer=full_panel_name)
 
         print(f'Now writing {full_panel_name} to geodatabase')
         # Step 1: Export to GDB
-        exported_fc_path = export_to_geodb(
+        exported_fc_path = gis.export_to_geodb(
             input_gpkg_path=FULL_PANEL_DIR / FULL_PANEL_GEOPKG,
             layer_name=full_panel_name,
             gdb_path=GBD_DIR,
@@ -234,7 +233,7 @@ if __name__ == "__main__":
         # Step 2: Convert START_YR and END_YR to DATE fields (if export succeeded)
         if exported_fc_path:
             print('converting time fields to date')
-            convert_time_fields(
+            gis.convert_time_fields(
             table_path=exported_fc_path.name,  # now just the name of the FC
             field_pairs=[("YEAR", "YEAR_DATE")]
         )
@@ -273,10 +272,10 @@ if __name__ == "__main__":
                 print(f'\tEnsure that {value_field} is string...')
                 panel_gdf[value_field] = panel_gdf[value_field].astype(str).replace('nan', np.nan)
                 
-            value_pivot = pivot_panel(panel_gdf=panel_gdf, value_field=value_field)
+            value_pivot = gis.pivot_panel(panel_gdf=panel_gdf, value_field=value_field)
             # print('-'*100)
             # print(value_pivot.head())
-            change_value_pivot = calculate_change(value_pivot, value_prefix=value_field, per_year=False, 
+            change_value_pivot = panel.calculate_change(value_pivot, value_prefix=value_field, per_year=False, 
                                                 field_type='numeric' if value_field in NUMERIC_FIELD_VALUES else 'string')
             # print('-'*100)
             # print(change_value_pivot.head())
@@ -307,16 +306,16 @@ if __name__ == "__main__":
         # Convert to GeoDataFrame
         change_df = gpd.GeoDataFrame(change_df, geometry="geometry", crs=panel_gdf.crs)
         
-        change_df = enrich_change_gdf(change_df, panel_gdf, enrich_fields=["NEIGHBORHOOD", "GEOGCODE"])
+        change_df = panel.enrich_change_gdf(change_df, panel_gdf, enrich_fields=["NEIGHBORHOOD", "GEOGCODE"])
         print(f"Final GeoDataFrame shape: {change_df.shape=}")
         
         #output change data
-        write_gpkg_layer(change_df, year="change_panel", name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, layer=change_panel_name)
+        gis.write_gpkg_layer(change_df, year="change_panel", name=FULL_PANEL_GEOPKG, directory=FULL_PANEL_DIR, layer=change_panel_name)
         
         #-----------------------------------
         print(f'Now writing {change_panel_name} to geodatabase')
         # Step 1: Export to GDB
-        exported_fc_path = export_to_geodb(
+        exported_fc_path = gis.export_to_geodb(
             input_gpkg_path=FULL_PANEL_DIR / FULL_PANEL_GEOPKG,
             layer_name=change_panel_name,
             gdb_path=GBD_DIR,
@@ -325,7 +324,7 @@ if __name__ == "__main__":
         # Step 2: Convert START_YR and END_YR to DATE fields (if export succeeded)
         if exported_fc_path:
             print('converting time fields to date')
-            convert_time_fields(
+            gis.convert_time_fields(
             table_path=exported_fc_path.name,  # now just the name of the FC
             field_pairs=[("START_YR", "START_DATE"), ("END_YR", "END_DATE")]
         )

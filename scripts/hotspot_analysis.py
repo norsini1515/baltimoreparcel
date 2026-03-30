@@ -15,7 +15,7 @@ from pyogrio.errors import DataLayerError
 import arcpy
 
 from baltimoreparcel.directories import LOGS_DIR, GBD_DIR, get_year_gpkg_dir, ensure_dir
-from baltimoreparcel.gis_utils import read_vector_layer, write_gpkg_layer, pivot_panel, export_to_geodb, convert_time_fields
+from baltimoreparcel import gis
 from baltimoreparcel.utils import Logger, info, warn, error, success, process_step
 from baltimoreparcel.config import ALL_YEARS
 ############################################
@@ -113,7 +113,7 @@ if __name__ == "__main__":
             print(f"[SKIP {start} {end}] Layer {name} already exists in GPKG. Skipping write.")
             temp_fc_path = GBD_DIR / name
         else:
-            write_gpkg_layer(
+            gis.write_gpkg_layer(
                 gdf=year_changes_gdf,
                 year=name,
                 name=FULL_PANEL_GEOPKG,
@@ -121,7 +121,7 @@ if __name__ == "__main__":
                 layer=name
             )
             # Step 2: Export to FileGDB using ArcPy
-            temp_fc_path = export_to_geodb(
+            temp_fc_path = gis.export_to_geodb(
                 input_gpkg_path=FULL_PANEL_DIR / FULL_PANEL_GEOPKG,
                 layer_name=name,
                 gdb_path=GBD_DIR,
@@ -142,8 +142,8 @@ if __name__ == "__main__":
         try:
             arcpy.stats.HotSpots(
                 Input_Field=VARIABLE,
-                Input_Feature_Class=arcstr(temp_fc_path),
-                Output_Feature_Class=arcstr(GBD_DIR / f"hotspot_{year_str}"),
+                Input_Feature_Class=gis.arcstr(temp_fc_path),
+                Output_Feature_Class=gis.arcstr(GBD_DIR / f"hotspot_{year_str}"),
                 Conceptualization_of_Spatial_Relationships="INVERSE_DISTANCE",
                 Distance_Method="EUCLIDEAN_DISTANCE",
                 Standardization="ROW",

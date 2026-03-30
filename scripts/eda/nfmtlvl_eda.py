@@ -3,12 +3,11 @@
 ===============================================================================
 '''
 import sys
-from baltimoreparcel.gis_utils import read_vector_layer, write_gpkg_layer, pivot_panel
+from baltimoreparcel import gis, panel
 from baltimoreparcel.directories import get_year_gpkg_dir, GBD_DIR
-from baltimoreparcel.engineer_panel import log_value, calculate_change, summarize_field, enrich_change_gdf
 from baltimoreparcel.scripts.eda.plots import timeseries_histogram
-from baltimoreparcel.utils import info, warn, error
 
+from baltimoreparcel.utils import info, warn, error
 import matplotlib.pyplot as plt
 import seaborn as sns
 import geopandas as gpd
@@ -91,7 +90,7 @@ if __name__ == "__main__":
         histogram_path = FULL_PANEL_DIR / f"{FULL_VALUE}_histograms.png"
         trend_path = FULL_PANEL_DIR / f"{FULL_VALUE}_trend.png"
 
-        full_value_data = pivot_panel(panel_gdf, value_field=FULL_VALUE)
+        full_value_data = gis.pivot_panel(panel_gdf, value_field=FULL_VALUE)
         print(f"{full_value_data.shape=}, {full_value_data.columns.tolist()=}")
         timeseries_histogram(full_value_data, value_field=FULL_VALUE,
                          save_path=histogram_path,
@@ -113,7 +112,7 @@ if __name__ == "__main__":
     #-----------------------------------------------------------------------------------
     if summarize_change:
         print(f"\n\nSummarizing LOG_{VALUE}_CHNG...")
-        summary_df = summarize_field(NFMTTLVL_change_gdf, value_field=f"LOG_{VALUE}_CHNG", group_fields=["START_YR", "END_YR"])
+        summary_df = panel.summarize_field(NFMTTLVL_change_gdf, value_field=f"LOG_{VALUE}_CHNG", group_fields=["START_YR", "END_YR"])
         print(summary_df)
 
         summary_csv_path = FULL_PANEL_DIR / f"{VALUE}_log_change_summary.csv"
@@ -122,7 +121,7 @@ if __name__ == "__main__":
         
         
         print(f"\n\nSummarizing LOG_{VALUE}_CHNG by GEOGCODE...")
-        summary_df = summarize_field(NFMTTLVL_change_gdf, value_field=f"LOG_{VALUE}_CHNG", group_fields=["GEOGCODE", "START_YR", "END_YR"])
+        summary_df = panel.summarize_field(NFMTTLVL_change_gdf, value_field=f"LOG_{VALUE}_CHNG", group_fields=["GEOGCODE", "START_YR", "END_YR"])
         print(summary_df)
 
         summary_csv_path = FULL_PANEL_DIR / f"{VALUE}_geogcode_log_change_summary.csv"

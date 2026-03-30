@@ -1,5 +1,5 @@
 import arcpy
-from baltimoreparcel.gis_utils import arcstr
+from baltimoreparcel import gis
 from baltimoreparcel.directories import GBD_DIR
 
 # print(help(arcpy.stats.BivariateSpatialAssociation))
@@ -7,7 +7,7 @@ from baltimoreparcel.directories import GBD_DIR
 # print(f"Number of CPU cores available: {cpu_count()}")
 
 lag_panel_name = "base_lag_panel"
-lag_panel_gpkg_path = arcstr(GBD_DIR / lag_panel_name)
+lag_panel_gpkg_path = gis.arcstr(GBD_DIR / lag_panel_name)
 
 
 # out_path = arcstr(GBD_DIR / 'test_bivariate')

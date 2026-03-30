@@ -14,7 +14,7 @@ from datetime import datetime
 import arcpy
 
 from baltimoreparcel.directories import LOGS_DIR, GBD_DIR, get_year_gpkg_dir, ensure_dir
-from baltimoreparcel.gis_utils import read_vector_layer, write_gpkg_layer, pivot_panel, export_to_geodb, convert_time_fields
+from baltimoreparcel import gis
 from baltimoreparcel.utils import Logger, info, warn, error, success, process_step
 from baltimoreparcel.config import ALL_YEARS
 ############################################
@@ -275,7 +275,7 @@ if __name__ == "__main__":
         print(f"Final dtypes before export: {gdf.dtypes=}")
         print(f"Final shape before export: {gdf.shape=}")
         print(f"Final columns before export: {gdf.columns.tolist()=}")
-        write_gpkg_layer(
+        gis.write_gpkg_layer(
             gdf=gdf,
             year=name,
             name=FULL_PANEL_GEOPKG,
@@ -283,7 +283,7 @@ if __name__ == "__main__":
             layer=name
         )
         print(f"Exported {name} to GPKG at {FULL_PANEL_DIR / FULL_PANEL_GEOPKG}")
-        layer_path = export_to_geodb(
+        layer_path = gis.export_to_geodb(
                         input_gpkg_path=FULL_PANEL_DIR / FULL_PANEL_GEOPKG,
                         layer_name=name,
                         gdb_path=GBD_DIR,

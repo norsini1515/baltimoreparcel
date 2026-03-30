@@ -16,10 +16,10 @@ from sklearn.metrics import r2_score, mean_squared_error
 
 from baltimoreparcel.utils import Logger, info, warn, error, success, process_step
 from baltimoreparcel.directories import LOGS_DIR, GBD_DIR
-from baltimoreparcel.gis_utils import arcstr
+from baltimoreparcel import gis
 
 arcpy.env.overwriteOutput = True
-arcpy.env.workspace = arcstr(GBD_DIR)
+arcpy.env.workspace = gis.arcstr(GBD_DIR)
 
 # Set input layer names
 biv_knn50_lnd = "biv_TTLCHG_LNDCHG_knn50_merged"
@@ -46,9 +46,9 @@ if __name__ == "__main__":
 
     process_step("Step 1: SpatialJoin LND + IMP")
     arcpy.analysis.SpatialJoin(
-        target_features=arcstr(GBD_DIR / biv_knn50_lnd),
-        join_features=arcstr(GBD_DIR / biv_knn50_imp),
-        out_feature_class=arcstr(GBD_DIR / joined_lnd_imp),
+        target_features=gis.arcstr(GBD_DIR / biv_knn50_lnd),
+        join_features=gis.arcstr(GBD_DIR / biv_knn50_imp),
+        out_feature_class=gis.arcstr(GBD_DIR / joined_lnd_imp),
         join_type="KEEP_ALL",
         join_operation="JOIN_ONE_TO_ONE",
         match_option="INTERSECT"
@@ -57,9 +57,9 @@ if __name__ == "__main__":
 
     process_step("Step 2: SpatialJoin result + ZCH")
     arcpy.analysis.SpatialJoin(
-        target_features=arcstr(GBD_DIR / joined_lnd_imp),
-        join_features=arcstr(GBD_DIR / biv_knn50_zch),
-        out_feature_class=arcstr(GBD_DIR / final_merged),
+        target_features=gis.arcstr(GBD_DIR / joined_lnd_imp),
+        join_features=gis.arcstr(GBD_DIR / biv_knn50_zch),
+        out_feature_class=gis.arcstr(GBD_DIR / final_merged),
         join_type="KEEP_ALL",
         join_operation="JOIN_ONE_TO_ONE",
         match_option="INTERSECT"

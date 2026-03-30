@@ -10,10 +10,10 @@ from pathlib import Path
 
 from baltimoreparcel.directories import LOGS_DIR, GBD_DIR
 from baltimoreparcel.utils import Logger, info, warn, error, success, process_step
-from baltimoreparcel.gis_utils import convert_time_fields, arcstr
+from baltimoreparcel import gis
 
 arcpy.env.overwriteOutput = True
-arcpy.env.workspace = arcstr(GBD_DIR)
+arcpy.env.workspace = gis.arcstr(GBD_DIR)
 
 def merge_layers(
     prefix: str,
@@ -74,7 +74,7 @@ def merge_layers(
         info(f"Fields in {output_fc}: {fields}")
 
         process_step("Converting time fields to proper DATE type...")
-        convert_time_fields(output_fc, field_pairs=time_pairs)
+        gis.convert_time_fields(output_fc, field_pairs=time_pairs)
 
     success(f"Output written to: {output_fc} in {GBD_DIR}")
 

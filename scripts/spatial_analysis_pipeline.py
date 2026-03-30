@@ -17,13 +17,13 @@ from typing import List, Dict, Optional, Tuple
 from baltimoreparcel.utils import Logger, info, warn, error, success
 from datetime import datetime
 from baltimoreparcel.directories import LOGS_DIR, GBD_DIR, DATA_DIR, FIGS_DIR
-from baltimoreparcel.gis_utils import arcstr
+from baltimoreparcel import gis
 from baltimoreparcel.config import ALL_YEARS
 from baltimoreparcel.scripts.merge_time_layers import merge_layers
 from baltimoreparcel.scripts.eda.plots import plot_line
 # Configuration
 arcpy.env.overwriteOutput = True
-arcpy.env.workspace = arcstr(GBD_DIR)
+arcpy.env.workspace = gis.arcstr(GBD_DIR)
 
 class AnalysisType(Enum):
     BIVARIATE = "bivariate"
@@ -183,7 +183,7 @@ class SpatialAnalyzer:
     
     def __init__(self, config: AnalysisConfig):
         self.config = config
-        self.lag_panel_path = arcstr(GBD_DIR / config.lag_panel_name)
+        self.lag_panel_path = gis.arcstr(GBD_DIR / config.lag_panel_name)
         
     def load_lag_panel(self) -> gpd.GeoDataFrame:
         """Load the lag panel data."""
@@ -218,7 +218,7 @@ class SpatialAnalyzer:
             )
             output_name = f"{base_name}_{year}_{lag_year}" if lag_year else f"{base_name}_{year}"
         
-        out_path = arcstr(GBD_DIR / output_name)
+        out_path = gis.arcstr(GBD_DIR / output_name)
         
         if not SpatialAnalysisUtils.safe_delete(out_path):
             return None

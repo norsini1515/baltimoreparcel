@@ -1,7 +1,7 @@
 import os
 import geopandas as gpd
 import matplotlib.pyplot as plt
-from baltimoreparcel.gis_utils import read_vector_layer
+from baltimoreparcel import gis
 from baltimoreparcel.directories import get_year_gpkg_dir
 
 # === Load GeoData ===
@@ -9,7 +9,7 @@ FULL_PANEL_GEOPKG = "Baci_full_panel.gpkg"
 FULL_PANEL_DIR = get_year_gpkg_dir("full_panel")
 VALUE = "NFMTTLVL"
 
-NFMTTLVL_change_gdf = read_vector_layer(
+NFMTTLVL_change_gdf = gis.read_vector_layer(
     year=f"LOG_{VALUE}_change_wide_panel",
     name=FULL_PANEL_GEOPKG,
     directory=FULL_PANEL_DIR,

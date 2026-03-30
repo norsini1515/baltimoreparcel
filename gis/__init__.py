@@ -1,6 +1,12 @@
-# baltimoreparcel/gis_utils.py
-# Backward-compatibility shim — prefer: from baltimoreparcel import gis
-from baltimoreparcel.gis import *  # noqa: F401,F403
+# baltimoreparcel/gis/__init__.py
+# Utility functions for GIS data handling
+
+import geopandas as gpd
+from pathlib import Path
+from ..directories import DATA_DIR, GBD_DIR
+from ..utils import info, success, error, warn
+from shapely.ops import transform
+import arcpy
 
 
 ##################### SECTION 1 #####################
@@ -34,6 +40,7 @@ def strip_z(geom):
     if geom is None:
         return None
     return transform(lambda x, y, *_: (x, y), geom)
+
 ##################### SECTION 2 #####################
 # IO Functions
 #####################################################
@@ -92,7 +99,6 @@ def write_gpkg_layer(
     
     print("Sanitizing geometry...")
     gdf = sanitize_geometry(gdf)
-    # print(gdf.head())
 
     if drop_nulls:
         print("Dropping null geometries before write...")
@@ -273,17 +279,13 @@ def convert_time_fields(
     Parameters:
     ----------
     table_path : Path or str
-        Path to the GDB feature class or table (e.g., '.../BaltimoreParcelProject.gdb/change_panel').
+        Path to the GDB feature class or table.
     field_pairs : list of tuples
         Each tuple is (input_year_field, output_date_field).
     input_format : str, optional
         Format of the input year field. Defaults to "yyyy".
     output_type : str, optional
         Output time type. Use "DATE" for standard ArcGIS Date field.
-
-    Returns:
-    -------
-    None
     """
     try:
         print(f"Converting time fields in {table_path}...")

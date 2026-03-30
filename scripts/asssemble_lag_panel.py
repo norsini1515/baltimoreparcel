@@ -10,8 +10,7 @@ from pathlib import Path
 import geopandas as gpd
 from baltimoreparcel.directories import LOGS_DIR, GBD_DIR, get_year_gpkg_dir, ensure_dir
 from baltimoreparcel.utils import Logger, info, warn, error, success, process_step
-from baltimoreparcel.gis_utils import arcstr
-from baltimoreparcel.gis_utils import write_gpkg_layer, pivot_panel, export_to_geodb
+from baltimoreparcel import gis
 from baltimoreparcel.config import ALL_YEARS
 
 
@@ -62,7 +61,7 @@ def assemble_lag_panel(
             continue
 
         info(f"Pivoting variable: {var}")
-        pivoted = pivot_panel(
+        pivoted = gis.pivot_panel(
             panel_gdf=df,
             value_field=var,
             id_field=id_field,
@@ -110,7 +109,7 @@ def write_lag_outputs(
     """
     Write lag panel to GPKG and FileGDB.
     """
-    write_gpkg_layer(
+    gis.write_gpkg_layer(
         gdf=lag_df,
         year="custom_lag",
         name=FULL_PANEL_GEOPKG,
@@ -119,7 +118,7 @@ def write_lag_outputs(
     )
 
     process_step("Exporting lag panel to FileGDB...")
-    temp_fc_path = export_to_geodb(
+    temp_fc_path = gis.export_to_geodb(
         input_gpkg_path=FULL_PANEL_DIR / FULL_PANEL_GEOPKG,
         layer_name=layer_name,
         gdb_path=GBD_DIR,

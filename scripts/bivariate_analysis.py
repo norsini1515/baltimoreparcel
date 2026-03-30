@@ -13,17 +13,17 @@ import time
 from baltimoreparcel.utils import Logger, info, warn, error, success, process_step
 from datetime import datetime
 from baltimoreparcel.directories import LOGS_DIR, GBD_DIR, DATA_DIR
-from baltimoreparcel.gis_utils import arcstr
+from baltimoreparcel import gis
 from baltimoreparcel.config import ALL_YEARS
 from baltimoreparcel.scripts.merge_time_layers import merge_layers
 
 arcpy.env.overwriteOutput = True
-arcpy.env.workspace = arcstr(GBD_DIR)
-print(arcstr(GBD_DIR))
+arcpy.env.workspace = gis.arcstr(GBD_DIR)
+print(gis.arcstr(GBD_DIR))
 # sys.exit()
 
 lag_panel_name = "base_lag_panel"
-lag_panel_gpkg_path = arcstr(GBD_DIR / lag_panel_name)
+lag_panel_gpkg_path = gis.arcstr(GBD_DIR / lag_panel_name)
 print(f"lag_panel_gpkg_path: {lag_panel_gpkg_path}")
 
 NEIGHBORHOOD_SETTINGS = [
@@ -93,7 +93,7 @@ def run_bivariate_analysis_for_setting(lag_panel_cols, response_var, explan_var,
 
     analysis_field1 = f"{response_var}_{year}"
     analysis_field2 = f"{explan_var}_{lag_year}"
-    out_path = arcstr(GBD_DIR / f"{output_name_base2}_{year}_{lag_year}")
+    out_path = gis.arcstr(GBD_DIR / f"{output_name_base2}_{year}_{lag_year}")
 
     # Check that both columns exist
     if analysis_field1 not in lag_panel_cols or analysis_field2 not in lag_panel_cols:
@@ -319,7 +319,7 @@ def bivariate_neighborhood_pipeline(lag_panel_gdf: gpd.GeoDataFrame = None,
     if lag_panel_gdf is None:
         #default to reading from the lag panel feature class
 
-        lag_panel_path = arcstr(GBD_DIR / panel_name)
+        lag_panel_path = gis.arcstr(GBD_DIR / panel_name)
         if not arcpy.Exists(lag_panel_path):
             error(f"Lag panel feature class '{lag_panel_path}' does not exist.")
             exit(1)
@@ -391,7 +391,7 @@ def evaluate_neighborhood_significant_count(merged_feature_paths: list[str]) -> 
     summaries = []
 
     for layer_name in merged_feature_paths:
-        layer_path = arcstr(GBD_DIR / layer_name)
+        layer_path = gis.arcstr(GBD_DIR / layer_name)
         try:
             gdf = gpd.read_file(str(layer_path))
         except Exception as e:
@@ -432,7 +432,7 @@ if __name__ == "__main__":
 
     # Step 1: Read lag panel
     print("Reading lag panel...")
-    lag_panel_path = arcstr(GBD_DIR / lag_panel_name)
+    lag_panel_path = gis.arcstr(GBD_DIR / lag_panel_name)
     lag_panel_gdf = gpd.read_file(str(GBD_DIR), layer=lag_panel_name)
     info(f"lag_panel shape: {lag_panel_gdf.shape=}")
     print(f"Columns in lag panel: {lag_panel_gdf.columns.tolist()}")

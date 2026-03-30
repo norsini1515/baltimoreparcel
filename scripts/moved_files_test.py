@@ -1,7 +1,4 @@
-from baltimoreparcel.gis_utils import (
-    read_vector_layer, ensure_crs, filter_on_field,
-    select_columns, write_gpkg_layer
-)
+from baltimoreparcel import gis
 from baltimoreparcel.directories import (
     GBD_DIR, FILTERED_DIR, get_year_gpkg_dir
 )
