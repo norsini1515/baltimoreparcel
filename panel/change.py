@@ -1,37 +1,9 @@
-# baltimoreparcel/panel/__init__.py
-# Re-exports all public symbols so callers can do: from baltimoreparcel import panel; panel.calculate_change()
+# baltimoreparcel/panel/change.py
+# Year-over-year change calculation, panel enrichment, and summary statistics
 
-from .transform import (
-    to_real_data,
-    log_value,
-)
-from .change import (
-    calculate_change,
-    enrich_change_gdf,
-    summarize_field,
-)
-from .spatial import (
-    spatial_join_with_neighborhoods,
-)
-
-__all__ = [
-    # transform
-    "to_real_data", "log_value",
-    # change
-    "calculate_change", "enrich_change_gdf", "summarize_field",
-    # spatial
-    "spatial_join_with_neighborhoods",
-]
-
-
-def to_real_data(data: pd.Series, prices: pd.DataFrame):
-    return data / prices['Price']
-
-
-def log_value(gdf: gpd.GeoDataFrame, value_field: str) -> gpd.GeoDataFrame:
-    gdf = gdf.copy()
-    gdf[f"LOG_{value_field}"] = np.log(gdf[value_field].replace(0, np.nan))
-    return gdf
+import numpy as np
+import geopandas as gpd
+import pandas as pd
 
 
 def calculate_change(
@@ -41,21 +13,23 @@ def calculate_change(
     geom_col: str = "geometry",
     per_year: bool = True,
     dropna: bool = True,
-    field_type: str = "numeric"
+    field_type: str = "numeric",
 ) -> gpd.GeoDataFrame:
     """
-    Vectorized long-form change calculator for log value fields.
+    Vectorized long-form change calculator.
 
     Parameters:
-        gdf         : Wide-format GeoDataFrame | LOG_NFMTTLVL_2003, ..., _2024
-        value_prefix: Prefix for columns (e.g., 'LOG_NFMTTLVL')
-        acctid_col  : Name of parcel ID column
-        geom_col    : Name of geometry column
-        per_year    : Whether to include per-year log change
-        dropna      : Whether to exclude rows with NA or no change
+        gdf          : Wide-format GeoDataFrame with year columns
+                       e.g. LOG_NFMTTLVL_2003 … LOG_NFMTTLVL_2024
+        value_prefix : Column prefix (e.g. 'LOG_NFMTTLVL')
+        acctid_col   : Parcel ID column name
+        geom_col     : Geometry column name
+        per_year     : Include annualized change column
+        dropna       : Drop rows where change is NA or zero
+        field_type   : 'numeric' or 'string'
 
     Returns:
-        Long-form GeoDataFrame
+        Long-form GeoDataFrame with one row per ACCTID-period.
     """
     value_cols = sorted(
         [col for col in gdf.columns if col.startswith(f"{value_prefix}_")],
@@ -68,7 +42,7 @@ def calculate_change(
     for i in range(1, len(years)):
         y0, y1 = years[i - 1], years[i]
         col0, col1 = f"{value_prefix}_{y0}", f"{value_prefix}_{y1}"
-        
+
         if field_type == "numeric":
             delta = gdf[col1] - gdf[col0]
             out = pd.DataFrame({
@@ -76,15 +50,13 @@ def calculate_change(
                 geom_col: gdf[geom_col],
                 "START_YR": y0,
                 "END_YR": y1,
-                f"{value_prefix}_CHNG": delta
+                f"{value_prefix}_CHNG": delta,
             })
-
             if per_year:
                 out[f"{value_prefix}_CHNG_PER_YEAR"] = delta / (y1 - y0)
-
             if dropna:
                 out = out[delta.notna() & (delta != 0)]
-        
+
         elif field_type == "string":
             s0 = gdf[col0].astype(str).str.strip().str.lower()
             s1 = gdf[col1].astype(str).str.strip().str.lower()
@@ -101,6 +73,7 @@ def calculate_change(
 
         else:
             raise ValueError(f"Unsupported field_type: {field_type}")
+
         result_frames.append(out)
 
     result = pd.concat(result_frames, ignore_index=True)
@@ -110,8 +83,9 @@ def calculate_change(
 def enrich_change_gdf(
     change_gdf: gpd.GeoDataFrame,
     base_gdf: gpd.GeoDataFrame,
-    enrich_fields: list[str]
+    enrich_fields: list[str],
 ) -> gpd.GeoDataFrame:
+    """Attach metadata fields from the base panel to a change GeoDataFrame."""
     enrich_df = base_gdf[["ACCTID"] + enrich_fields].drop_duplicates()
     return change_gdf.merge(enrich_df, on="ACCTID", how="left")
 
@@ -119,40 +93,24 @@ def enrich_change_gdf(
 def summarize_field(
     change_gdf: gpd.GeoDataFrame,
     value_field: str = "LOG_NFMTTLVL_CHNG",
-    group_fields: list[str] = ["START_YR", "END_YR"]
+    group_fields: list[str] = ["START_YR", "END_YR"],
 ) -> pd.DataFrame:
+    """Aggregate change statistics (mean, median, std, pos/neg counts) by group."""
     df = (
         change_gdf
         .groupby(group_fields)
         .agg(
-            n=("ACCTID", "count"),
-            mean=(value_field, "mean"),
-            median=(value_field, "median"),
-            std=(value_field, "std"),
-            pos=(value_field, lambda x: (x > 0).sum()),
-            neg=(value_field, lambda x: (x < 0).sum()),
+            n=(        "ACCTID",     "count"),
+            mean=(     value_field,  "mean"),
+            median=(   value_field,  "median"),
+            std=(      value_field,  "std"),
+            pos=(      value_field,  lambda x: (x > 0).sum()),
+            neg=(      value_field,  lambda x: (x < 0).sum()),
         )
-        .assign(net_growth=lambda df: df["pos"] - df["neg"])
         .reset_index()
     )
     df["net_growth"] = df["pos"] - df["neg"]
     df["span_years"] = df["END_YR"] - df["START_YR"]
-    df["mean_ann"] = df["mean"] / df["span_years"]
+    df["mean_ann"]   = df["mean"]   / df["span_years"]
     df["median_ann"] = df["median"] / df["span_years"]
     return df
-
-
-def spatial_join_with_neighborhoods(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    Spatially joins a GeoDataFrame with the Baltimore Neighborhood Statistical Areas (NSAs),
-    appending only the 'Name' field as 'NEIGHBORHOOD'.
-    """
-    nsa_gdf = gpd.read_file(str(GBD_DIR), layer="neighborhoods")[["Name", "geometry"]]\
-              .rename(columns={"Name": "NEIGHBORHOOD"})
-
-    if gdf.crs != nsa_gdf.crs:
-        nsa_gdf = nsa_gdf.to_crs(gdf.crs)
-
-    joined = gpd.sjoin(gdf, nsa_gdf, how="left", predicate="intersects")
-    joined = joined.drop(columns=["index_right"], errors="ignore")
-    return joined

@@ -1,12 +1,39 @@
 # baltimoreparcel/gis/__init__.py
-# Utility functions for GIS data handling
+# Re-exports all public symbols so callers can do: from baltimoreparcel import gis; gis.read_vector_layer()
 
-import geopandas as gpd
-from pathlib import Path
-from ..directories import DATA_DIR, GBD_DIR
-from ..utils import info, success, error, warn
-from shapely.ops import transform
-import arcpy
+from .validate import (
+    is_valid_gis_file,
+    parse_gpkg_name,
+    drop_null_geometries,
+    strip_z,
+    sanitize_geometry,
+)
+from .io import (
+    arcstr,
+    read_gis_file,
+    read_vector_layer,
+    write_gpkg_layer,
+    export_to_geodb,
+)
+from .transform import (
+    ensure_crs,
+    filter_on_field,
+    select_columns,
+    pivot_panel,
+    convert_time_fields,
+)
+
+__all__ = [
+    # validate
+    "is_valid_gis_file", "parse_gpkg_name", "drop_null_geometries",
+    "strip_z", "sanitize_geometry",
+    # io
+    "arcstr", "read_gis_file", "read_vector_layer",
+    "write_gpkg_layer", "export_to_geodb",
+    # transform
+    "ensure_crs", "filter_on_field", "select_columns",
+    "pivot_panel", "convert_time_fields",
+]
 
 
 ##################### SECTION 1 #####################
