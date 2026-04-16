@@ -5,6 +5,9 @@ PROJECT_DIR = Path(__file__).parent.parent
 GBD_DIR = PROJECT_DIR / "BaltimoreParcelProject.gdb"
 DATA_DIR = PROJECT_DIR / "data"
 RAW_DIR = DATA_DIR / "raw"
+RAW_PARCELS_DIR = RAW_DIR / "parcel_data"
+
+
 FILTERED_DIR = DATA_DIR / "filtered"
 FIGS_DIR = DATA_DIR / "figures"
 LOGS_DIR = PROJECT_DIR / "logs"

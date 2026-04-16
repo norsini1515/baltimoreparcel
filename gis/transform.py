@@ -52,7 +52,7 @@ def filter_on_field(
         before = len(filtered_gdf)
         filtered_gdf = filtered_gdf[mask]
         after = len(filtered_gdf)
-        print(f"[{identifier}] Filtered {field}: {before} → {after}")
+        print(f"[{identifier}] Filtered {field}: {before} --> {after}")
 
     return filtered_gdf if not filtered_gdf.empty else None
 
