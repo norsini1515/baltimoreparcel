@@ -54,7 +54,7 @@ def _run_aggregations(
     """
     Apply a list of AggregationRule objects to *panel_gdf*.
 
-    Returns a dict mapping output layer name → aggregated GeoDataFrame.
+    Returns a dict mapping output layer name --> aggregated GeoDataFrame.
     """
     process_step(f"Aggregating: {panel_name}")
     results = {}
@@ -63,9 +63,9 @@ def _run_aggregations(
         group_keys = rule.group_by
         agg_dict = rule.agg
         suffix = "_".join(group_keys).lower()
-        out_name = f"{panel_name}_agg_{suffix}"
+        out_name = rule.name if rule.name else f"{panel_name}_agg_{suffix}"
 
-        info(f"  → {out_name}  (group by {group_keys})")
+        info(f"  --> {out_name}  (group by {group_keys})")
 
         # Coerce object columns that are supposed to be numeric
         for col, func in agg_dict.items():
@@ -135,7 +135,7 @@ def _export_layer(
     time_field_pairs: list,
 ) -> None:
     """Write to GPKG, push to GDB, convert time fields."""
-    # Nullable int64 → float so ArcPy doesn't choke
+    # Nullable int64 --> float so ArcPy doesn't choke
     for col in gdf.columns:
         if gdf[col].dtype == "int64" and gdf[col].isna().any():
             gdf[col] = gdf[col].astype("float")
@@ -172,15 +172,21 @@ def _export_layer(
 def run(cfg: AggregateRunConfig, do_full: bool = False, do_change: bool = True) -> None:
     cfg.logs_path.mkdir(parents=True, exist_ok=True)
 
-    # Load neighborhood geometries for spatial merging
-    neigh_gdf = gpd.read_file(
-        str(cfg.gdb_path), layer=cfg.spatial.neighborhoods_layer
-    )
-    neigh_gdf = neigh_gdf.rename(
-        columns={cfg.spatial.neighborhoods_name_field: cfg.spatial.neighborhoods_output_field}
-    )[[cfg.spatial.neighborhoods_output_field, "geometry"]]
-
-    geom_lookup = {cfg.spatial.neighborhoods_output_field: neigh_gdf}
+    # Build geometry lookup from attribute-type spatial joins
+    # (isin joins produce booleans — no polygon geometry to attach to aggregated rows)
+    geom_lookup = {}
+    for join_spec in cfg.spatial.joins:
+        if join_spec.type != "attribute":
+            continue
+        try:
+            ref_gdf = gpd.read_file(str(cfg.gdb_path), layer=join_spec.layer)
+            ref_gdf = (
+                ref_gdf[[join_spec.field, "geometry"]]
+                .rename(columns={join_spec.field: join_spec.output_field})
+            )
+            geom_lookup[join_spec.output_field] = ref_gdf
+        except Exception as exc:
+            warn(f"Could not load geometry for '{join_spec.output_field}' — skipping. ({exc})")
 
     all_aggregated: dict[str, gpd.GeoDataFrame] = {}
 

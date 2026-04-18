@@ -66,6 +66,50 @@ class PanelOutputConfig:
 
 
 @dataclass
+class TreatmentPeriod:
+    """
+    One time-period window for an ``ez_treatment`` derive rule.
+    Rows whose year falls in [years_start, years_end] are assigned
+    treatment status based on ``ez_field`` and ``focus_field``.
+    """
+    years_start: int = 0
+    years_end: int = 9999
+    treated_field: str = ""    # binary column: 1 = in primary treatment group
+    extra_field: str = ""      # binary column: 1 = in extra/focus treatment group (subset of treated)
+
+
+@dataclass
+class DeriveRule:
+    """
+    One derived-column rule applied row-by-row to the panel.
+
+    type = "isin"
+        Creates a binary (0/1) column ``name`` that is 1 when ``field``
+        is in ``values``.
+
+    type = "ez_treatment"
+        Creates three binary columns (``output_treated``,
+        ``output_extra_treated``, ``output_untreated``) using year-conditional
+        EZ membership.  For each period, a row is classified as:
+          extra_treated  if focus_field == 1
+          treated        if ez_field == 1 and focus_field == 0
+          untreated      if ez_field == 0
+    """
+    type: str = "isin"
+    # isin fields
+    name: Optional[str] = None
+    source_field: Optional[str] = None    # renamed from 'field' to avoid shadowing dataclasses.field
+    values: list = field(default_factory=list)
+    # ez_treatment fields
+    year_field: str = "YEAR"
+    periods: list = field(default_factory=list)   # list[TreatmentPeriod]
+    output_treated: str = "TREATED"
+    output_extra_treated: str = "EXTRA_TREATED"
+    output_not_treated: str = "NOT_TREATED"
+    output_label: str = "TREATMENT_GROUP"    # string label: "treated" / "extra treated" / "not treated"
+
+
+@dataclass
 class FieldsConfig:
     """
     Field lists that drive column selection, transformations, and change calculations.
@@ -76,6 +120,7 @@ class FieldsConfig:
                       (empty = keep everything)
     monetary        → subset of keep: apply CPI inflation adjustment
     log_transform   → subset of keep (or derived REAL_* cols): log-transform
+    derive          → computed columns added to the panel (isin flags, treatment status)
     numeric_change  → subset of keep (or derived cols): compute numeric diff
     string_change   → subset of keep: compute binary change flag
     enrich          → fields from the full panel to attach to change panel rows
@@ -83,6 +128,7 @@ class FieldsConfig:
     keep: list = field(default_factory=list)
     monetary: list = field(default_factory=list)
     log_transform: list = field(default_factory=list)
+    derive: list = field(default_factory=list)       # list[DeriveRule]
     numeric_change: list = field(default_factory=list)
     string_change: list = field(default_factory=list)
     enrich: list = field(default_factory=list)
@@ -91,11 +137,35 @@ class FieldsConfig:
 
 
 @dataclass
+class SpatialJoinSpec:
+    """
+    One spatial enrichment step applied during panel assembly.
+
+    type
+    ----
+    attribute   Spatial join that attaches a field value from the overlapping
+                reference polygon (e.g. neighbourhood name).  Requires ``field``.
+    isin        Creates a boolean column: True if the parcel geometry satisfies
+                the spatial predicate against the reference layer.
+
+    how
+    ---
+    within      Strict containment — the parcel geometry must lie fully inside
+                the reference polygon.
+    intersects  Any overlap counts.  More permissive; useful for parcels that
+                straddle boundaries.
+    """
+    layer: str = ""                      # GDB feature class name
+    type: str = "attribute"              # "attribute" or "isin"
+    field: Optional[str] = None          # source field (attribute type only)
+    output_field: str = ""               # column name added to the panel
+    how: str = "within"                  # spatial predicate: "within" | "intersects"
+
+
+@dataclass
 class SpatialConfig:
-    """Reference layer used for spatial enrichment (e.g. neighborhoods)."""
-    neighborhoods_layer: str = "neighborhoods"
-    neighborhoods_name_field: str = "Name"
-    neighborhoods_output_field: str = "NEIGHBORHOOD"
+    """Spatial enrichment steps applied during panel assembly."""
+    joins: list = field(default_factory=list)   # list[SpatialJoinSpec]
 
 
 @dataclass
@@ -104,6 +174,7 @@ class TogglesConfig:
     generate_new_panel: bool = False
     calculate_real_values: bool = False
     log_value_fields: bool = False
+    derive_fields: bool = False    # run derive rules (requires spatial joins to run first)
 
 
 @dataclass
@@ -120,8 +191,16 @@ class LayerSpec:
                 is provided; explicit ``type`` overrides inference.
     layer       Sub-layer name inside a multi-layer source (GPKG, GDB).  May contain
                 ``{year}`` for year_series.  Leave None for single-layer files.
-    crs_epsg    Override the project CRS for this specific layer.  None = use
-                ``project.crs_epsg``.
+    crs_epsg    Target CRS for this layer.  None = use ``project.crs_epsg``.
+    source_crs_epsg
+                The CRS the source file's coordinates are *actually in*, for
+                use when the file has no .prj / CRS metadata.  When set,
+                ``ensure_crs`` assigns this as the source CRS and then
+                reprojects to ``crs_epsg``.  Leave None when the file either
+                has its CRS embedded or is already in the target CRS.
+    bbox        ``[xmin, ymin, xmax, ymax]`` in the *target* CRS.  Applied
+                after reprojection — rows with centroids outside this envelope
+                are dropped.  Use to remove stray/sentinel-coordinate features.
     keep        Column subset to retain.  Empty list = keep all columns.
     filters     Filter specs (same dict format as before: field, type, value).
     years       Year list for year_series layers.  Auto-populated from a ``years:``
@@ -135,6 +214,8 @@ class LayerSpec:
     type: str = "static"                     # "static" or "year_series"
     layer: Optional[str] = None
     crs_epsg: Optional[int] = None
+    source_crs_epsg: Optional[int] = None
+    bbox: Optional[list] = None              # [xmin, ymin, xmax, ymax] in target CRS; drops anything outside
     keep: list = field(default_factory=list)
     filters: list = field(default_factory=list)
     years: list = field(default_factory=list)
@@ -155,6 +236,7 @@ class AggregationRule:
     """One groupby-aggregation step."""
     group_by: list = field(default_factory=list)
     agg: dict = field(default_factory=dict)
+    name: Optional[str] = None    # output GDB layer name; auto-generated from group_by if omitted
 
 
 @dataclass
@@ -407,22 +489,28 @@ def _parse_panel(raw: dict) -> PanelOutputConfig:
 
 def _parse_spatial(raw: dict) -> SpatialConfig:
     s = raw.get("spatial", {})
-    return SpatialConfig(
-        neighborhoods_layer=s.get("neighborhoods_layer", "neighborhoods"),
-        neighborhoods_name_field=s.get("neighborhoods_name_field", "Name"),
-        neighborhoods_output_field=s.get("neighborhoods_output_field", "NEIGHBORHOOD"),
-    )
+    joins = [
+        SpatialJoinSpec(
+            layer=j["layer"],
+            type=j.get("type", "attribute"),
+            field=j.get("field", None),
+            output_field=j["output_field"],
+            how=j.get("how", "within"),
+        )
+        for j in s.get("joins", [])
+    ]
+    return SpatialConfig(joins=joins)
 
 
 def _parse_aggregations(raw: dict) -> AggregationsConfig:
     a = raw.get("aggregations", {})
     return AggregationsConfig(
         full_panel=[
-            AggregationRule(group_by=r["group_by"], agg=r["agg"])
+            AggregationRule(group_by=r["group_by"], agg=r["agg"], name=r.get("name"))
             for r in a.get("full_panel", [])
         ],
         change_panel=[
-            AggregationRule(group_by=r["group_by"], agg=r["agg"])
+            AggregationRule(group_by=r["group_by"], agg=r["agg"], name=r.get("name"))
             for r in a.get("change_panel", [])
         ],
     )
@@ -440,6 +528,8 @@ def _parse_layer_spec(spec: dict) -> LayerSpec:
         type=spec.get("type", inferred_type),
         layer=spec.get("layer", None),
         crs_epsg=spec.get("crs_epsg", None),
+        source_crs_epsg=spec.get("source_crs_epsg", None),
+        bbox=spec.get("bbox", None),
         keep=spec.get("keep", []),
         filters=spec.get("filters", []),
         years=years,
@@ -454,13 +544,52 @@ def _parse_ingest(raw: dict) -> IngestConfig:
     )
 
 
+def _parse_derive_rules(rules_raw: list) -> list:
+    """Parse the fields.derive list into DeriveRule objects."""
+    rules = []
+    for r in rules_raw:
+        rule_type = r.get("type", "isin")
+        if rule_type == "isin":
+            rules.append(DeriveRule(
+                type="isin",
+                name=r["name"],
+                source_field=r["field"],
+                values=r.get("values", []),
+            ))
+        elif rule_type == "treatment":
+            periods = [
+                TreatmentPeriod(
+                    years_start=p["years"]["start"],
+                    years_end=p["years"]["end"],
+                    treated_field=p["treated_field"],
+                    extra_field=p["extra_field"],
+                )
+                for p in r.get("periods", [])
+            ]
+            rules.append(DeriveRule(
+                type="treatment",
+                year_field=r.get("year_field", "YEAR"),
+                periods=periods,
+                output_treated=r.get("output_treated", "TREATED"),
+                output_extra_treated=r.get("output_extra_treated", "EXTRA_TREATED"),
+                output_not_treated=r.get("output_not_treated", "NOT_TREATED"),
+                output_label=r.get("output_label", "TREATMENT_GROUP"),
+            ))
+        else:
+            raise ValueError(f"Unknown derive rule type: {rule_type!r}. Valid types: isin, treatment")
+    return rules
+
+
 def _parse_fields(raw: dict) -> FieldsConfig:
     f = raw.get("fields", {})
     tf = f.get("time_fields", {})
+    # Note: derive rules are parsed from top-level 'derive:' key (after 'spatial:'),
+    # not from 'fields.derive', so that key order in the YAML reflects execution order.
     return FieldsConfig(
         keep=f.get("keep", []),
         monetary=f.get("monetary", []),
         log_transform=f.get("log_transform", []),
+        derive=[],   # populated by load_config from top-level 'derive:' key
         numeric_change=f.get("numeric_change", []),
         string_change=f.get("string_change", []),
         enrich=f.get("enrich", []),
@@ -494,9 +623,13 @@ def load_config(yaml_path: Union[str, Path]) -> PanelRunConfig:
         generate_new_panel=t.get("generate_new_panel", False),
         calculate_real_values=t.get("calculate_real_values", False),
         log_value_fields=t.get("log_value_fields", False),
+        derive_fields=t.get("derive_fields", False),
     )
 
     ingest = _parse_ingest(raw)
+
+    fields = _parse_fields(raw)
+    fields.derive = _parse_derive_rules(raw.get("derive", []))
 
     pl = raw.get("pipeline", {})
     pipeline = PipelineConfig(stages=pl.get("stages", []))
@@ -505,7 +638,7 @@ def load_config(yaml_path: Union[str, Path]) -> PanelRunConfig:
         project=project,
         data=data,
         panel=_parse_panel(raw),
-        fields=_parse_fields(raw),
+        fields=fields,
         spatial=_parse_spatial(raw),
         toggles=toggles,
         aggregations=_parse_aggregations(raw),

@@ -11,7 +11,12 @@ from .change import (
     summarize_field,
 )
 from .spatial import (
-    spatial_join_with_neighborhoods,
+    apply_spatial_joins,
+)
+from .derive import (
+    apply_isin_rule,
+    apply_treatment,
+    apply_derive_rules,
 )
 
 __all__ = [
@@ -20,5 +25,7 @@ __all__ = [
     # change
     "calculate_change", "enrich_change_gdf", "summarize_field",
     # spatial
-    "spatial_join_with_neighborhoods",
+    "apply_spatial_joins",
+    # derive
+    "apply_isin_rule", "apply_treatment", "apply_derive_rules",
 ]

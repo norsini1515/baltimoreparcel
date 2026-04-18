@@ -8,16 +8,33 @@ import arcpy
 from ..utils import success, error
 
 
-def ensure_crs(gdf: gpd.GeoDataFrame, epsg: int = 2248) -> gpd.GeoDataFrame:
+def ensure_crs(
+    gdf: gpd.GeoDataFrame,
+    epsg: int = 2248,
+    source_epsg: int | None = None,
+) -> gpd.GeoDataFrame:
     """
-    Ensure a GeoDataFrame has the correct CRS.
-    EPSG 2248 = NAD83 / Maryland (ftUS), default for Baltimore parcel data.
+    Ensure a GeoDataFrame is in the target CRS (``epsg``).
+
+    Parameters
+    ----------
+    epsg        Target CRS — all data is reprojected to this.
+    source_epsg The CRS the coordinates are *actually in* when the file has no
+                .prj / CRS metadata.  When provided and the file has no CRS,
+                this is assigned first and then reprojected to ``epsg``.
+                If omitted and the file has no CRS, ``epsg`` is assigned
+                directly (coordinates unchanged — only safe when the file is
+                already in the target CRS).
     """
     if gdf.crs is None:
-        print("CRS undefined – assigning EPSG:", epsg)
-        gdf.set_crs(epsg=epsg, inplace=True)
+        if source_epsg is not None:
+            print(f"CRS undefined – assigning source EPSG:{source_epsg}, reprojecting to EPSG:{epsg}")
+            gdf = gdf.set_crs(epsg=source_epsg).to_crs(epsg=epsg)
+        else:
+            print(f"CRS undefined – assigning EPSG:{epsg} (no source_crs_epsg; verify coordinates)")
+            gdf = gdf.set_crs(epsg=epsg)
     elif gdf.crs.to_epsg() != epsg:
-        print(f"Reprojecting from {gdf.crs} to EPSG:{epsg}")
+        print(f"Reprojecting from EPSG:{gdf.crs.to_epsg()} to EPSG:{epsg}")
         gdf = gdf.to_crs(epsg=epsg)
     return gdf
 

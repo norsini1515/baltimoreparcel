@@ -31,7 +31,6 @@ import datetime
 from pathlib import Path
 
 import arcpy
-import geopandas as gpd
 
 from baltimoreparcel import gis
 from baltimoreparcel.run_config import IngestRunConfig, LayerSpec, load_ingest_config
@@ -117,7 +116,19 @@ def _ingest_single(
 
     # --- CRS ----------------------------------------------------------------
     epsg = spec.crs_epsg if spec.crs_epsg is not None else cfg.project.crs_epsg
-    gdf = gis.ensure_crs(gdf, epsg=epsg)
+    gdf = gis.ensure_crs(gdf, epsg=epsg, source_epsg=spec.source_crs_epsg)
+
+    # --- Bounding box clip --------------------------------------------------
+    if spec.bbox:
+        xmin, ymin, xmax, ymax = spec.bbox
+        before = len(gdf)
+        gdf = gdf.cx[xmin:xmax, ymin:ymax]
+        dropped = before - len(gdf)
+        if dropped:
+            warn(f"{label} Dropped {dropped:,} rows outside bbox")
+        if gdf.empty:
+            warn(f"{label} No rows remain after bbox clip — skipping")
+            return False
 
     # --- Filters ------------------------------------------------------------
     if spec.filters:

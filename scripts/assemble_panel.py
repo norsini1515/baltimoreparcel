@@ -82,7 +82,7 @@ def _stack_years(years, cfg: PanelRunConfig) -> gpd.GeoDataFrame:
         .sort_values([cfg.data.id_field, cfg.data.year_field])
         .reset_index(drop=True)
     )
-    print(f"Panel: {len(long_df):,} rows × {len(long_df.columns)} columns")
+    success(f"Panel: {len(long_df):,} rows × {len(long_df.columns)} columns")
     return long_df
 
 
@@ -99,19 +99,16 @@ def _apply_column_filter(panel_gdf: gpd.GeoDataFrame, cfg: PanelRunConfig) -> gp
 
 
 def _apply_cpi(panel_gdf: gpd.GeoDataFrame, cfg: PanelRunConfig) -> gpd.GeoDataFrame:
-    cpi_path = cfg.full_panel_dir / cfg.panel.cpi_file
+    cpi_path = cfg.project_dir / cfg.panel.cpi_file
     print(f"Reading CPI from {cpi_path}")
-    prices = pd.read_csv(cpi_path).set_index(cfg.data.year_field)
-    id_field, year_field = cfg.data.id_field, cfg.data.year_field
+    price_map = pd.read_csv(cpi_path).set_index("year")["price"]
 
     for val in cfg.fields.monetary:
         if val not in panel_gdf.columns:
             warn(f"Skipping CPI for '{val}' — not in columns")
             continue
-        print(f"  {val} → REAL_{val}")
-        panel_gdf = panel_gdf.set_index([id_field, year_field])
-        panel_gdf[f"REAL_{val}"] = panel.to_real_data(panel_gdf[val], prices)
-        panel_gdf = panel_gdf.reset_index()
+        print(f"  {val} --> REAL_{val}")
+        panel_gdf[f"REAL_{val}"] = panel_gdf[val] / panel_gdf[cfg.data.year_field].map(price_map)
     return panel_gdf
 
 
@@ -120,9 +117,16 @@ def _apply_log(panel_gdf: gpd.GeoDataFrame, cfg: PanelRunConfig) -> gpd.GeoDataF
         if val not in panel_gdf.columns:
             warn(f"Skipping log for '{val}' — not in columns")
             continue
-        print(f"  {val} → LOG_{val}")
+        print(f"  {val} --> LOG_{val}")
         panel_gdf = panel.log_value(panel_gdf, value_field=val)
     return panel_gdf
+
+
+def _apply_derive(panel_gdf: gpd.GeoDataFrame, cfg: PanelRunConfig) -> gpd.GeoDataFrame:
+    print("Applying derive rules...")
+    for rule in cfg.fields.derive:
+        print(f"  [{rule.type}] --> {rule.name or rule.output_treated}")
+    return panel.apply_derive_rules(panel_gdf, cfg.fields.derive)
 
 
 # ---------------------------------------------------------------------------
@@ -196,20 +200,26 @@ def run(cfg: PanelRunConfig) -> None:
         panel_gdf = _apply_log(panel_gdf, cfg)
         panel_modified = True
 
+    if cfg.toggles.derive_fields:
+        if panel_gdf is None:
+            panel_gdf = _read_full_panel(cfg)
+        panel_modified = True
+
     if panel_gdf is None:
         panel_gdf = _read_full_panel(cfg)
 
     info(f"Panel shape: {panel_gdf.shape}")
 
     if panel_modified:
-        print("Spatial join with neighborhoods...")
-        panel_gdf = panel.spatial_join_with_neighborhoods(
-            panel_gdf,
-            gdb_path=cfg.gdb_path,
-            layer=cfg.spatial.neighborhoods_layer,
-            name_field=cfg.spatial.neighborhoods_name_field,
-            output_field=cfg.spatial.neighborhoods_output_field,
-        )
+        if cfg.spatial.joins:
+            print("Applying spatial joins...")
+            panel_gdf = panel.apply_spatial_joins(
+                panel_gdf,
+                joins=cfg.spatial.joins,
+                gdb_path=cfg.gdb_path,
+            )
+        if cfg.fields.derive:
+            panel_gdf = _apply_derive(panel_gdf, cfg)
         _write_and_export(
             panel_gdf,
             cfg.panel.full_panel_layer,

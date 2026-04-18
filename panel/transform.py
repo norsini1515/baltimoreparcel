@@ -6,9 +6,17 @@ import geopandas as gpd
 import pandas as pd
 
 
-def to_real_data(data: pd.Series, prices: pd.DataFrame) -> pd.Series:
-    """Deflate a nominal value series to real (2024) dollars using a CPI price index."""
-    return data / prices['Price']
+def to_real_data(data: pd.Series, price_map: pd.Series, year_series: pd.Series) -> pd.Series:
+    """
+    Deflate a nominal value series to real dollars.
+
+    Parameters
+    ----------
+    data        : nominal values (e.g. panel_gdf['NFMTTLVL'])
+    price_map   : price index keyed by year (e.g. prices.set_index('year')['price'])
+    year_series : year for each row  (e.g. panel_gdf['YEAR'])
+    """
+    return data / year_series.map(price_map)
 
 def log_value(gdf: gpd.GeoDataFrame, value_field: str) -> gpd.GeoDataFrame:
     """Add a log-transformed column LOG_{value_field} to the GeoDataFrame."""

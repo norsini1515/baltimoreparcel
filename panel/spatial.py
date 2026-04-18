@@ -1,59 +1,83 @@
 # baltimoreparcel/panel/spatial.py
-# Spatial enrichment for panel data
+"""
+Spatial enrichment steps applied to the panel during assembly.
+"""
 
 from pathlib import Path
-from typing import Optional
 
 import geopandas as gpd
 
-from ..directories import GBD_DIR
+from baltimoreparcel.utils import warn
 
 
-def spatial_join_with_neighborhoods(
-    gdf: gpd.GeoDataFrame,
-    gdb_path: Optional[Path] = None,
-    layer: str = "neighborhoods",
-    name_field: str = "Name",
-    output_field: str = "NEIGHBORHOOD",
+def apply_spatial_joins(
+    panel_gdf: gpd.GeoDataFrame,
+    joins: list,          # list[SpatialJoinSpec]
+    gdb_path: Path,
 ) -> gpd.GeoDataFrame:
     """
-    Spatially join parcels with a polygon reference layer (e.g. neighborhoods).
+    Apply a list of SpatialJoinSpec enrichments to the panel in sequence.
 
-    Appends one column to ``gdf`` whose name is ``output_field``, containing
-    the value of ``name_field`` from whichever reference polygon each parcel
-    intersects.
+    Each join reads its reference layer from the GDB.  If the layer is not
+    present the step is skipped with a warning so a missing optional layer
+    does not abort the whole assembly run.
 
-    Parameters
-    ----------
-    gdf : GeoDataFrame
-        Parcel (or any point/polygon) GeoDataFrame to enrich.
-    gdb_path : Path, optional
-        Path to the GDB or file containing the reference layer.
-        Defaults to the project GDB defined in directories.py.
-    layer : str
-        Layer name within the GDB/file.  Default: ``"neighborhoods"``.
-    name_field : str
-        Field in the reference layer whose value is carried over.
-        Default: ``"Name"``.
-    output_field : str
-        Column name written into the result.  Default: ``"NEIGHBORHOOD"``.
+    attribute joins
+        Attach a field value from the overlapping reference polygon.
+        One value per parcel — when multiple polygons overlap, the first
+        match is kept.
 
-    Returns
-    -------
-    GeoDataFrame
-        ``gdf`` with ``output_field`` appended.
+    isin joins
+        Add a boolean column: True when the parcel satisfies the spatial
+        predicate (``within`` or ``intersects``) against the reference layer.
     """
-    if gdb_path is None:
-        gdb_path = GBD_DIR
+    for spec in joins:
+        # --- Load reference layer -------------------------------------------
+        try:
+            ref_gdf = gpd.read_file(str(gdb_path), layer=spec.layer)
+        except Exception as exc:
+            warn(
+                f"Spatial join '{spec.output_field}': layer '{spec.layer}' not found "
+                f"in GDB — skipping. ({exc})"
+            )
+            continue
 
-    ref_gdf = (
-        gpd.read_file(str(gdb_path), layer=layer)[[name_field, "geometry"]]
-        .rename(columns={name_field: output_field})
-    )
+        # Reproject reference to match panel CRS
+        if ref_gdf.crs != panel_gdf.crs:
+            ref_gdf = ref_gdf.to_crs(panel_gdf.crs)
 
-    if ref_gdf.crs != gdf.crs:
-        ref_gdf = ref_gdf.to_crs(gdf.crs)
+        # --- Perform join ---------------------------------------------------
+        if spec.type == "attribute":
+            if not spec.field:
+                warn(f"Spatial join '{spec.output_field}': attribute join requires 'field' — skipping")
+                continue
+            ref_slim = (
+                ref_gdf[[spec.field, "geometry"]]
+                .rename(columns={spec.field: spec.output_field})
+                .reset_index(drop=True)
+            )
+            joined = gpd.sjoin(panel_gdf, ref_slim, how="left", predicate=spec.how)
+            joined = joined[~joined.index.duplicated(keep="first")]
+            panel_gdf = panel_gdf.copy()
+            panel_gdf[spec.output_field] = joined[spec.output_field]
 
-    joined = gpd.sjoin(gdf, ref_gdf, how="left", predicate="intersects")
-    joined = joined.drop(columns=["index_right"], errors="ignore")
-    return joined
+        elif spec.type == "isin":
+            ref_slim = ref_gdf[["geometry"]].reset_index(drop=True)
+            joined = gpd.sjoin(
+                panel_gdf[["geometry"]],
+                ref_slim,
+                how="left",
+                predicate=spec.how,
+            )
+            joined = joined[~joined.index.duplicated(keep="first")]
+            panel_gdf = panel_gdf.copy()
+            panel_gdf[spec.output_field] = joined["index_right"].notna()
+
+        else:
+            warn(f"Spatial join '{spec.output_field}': unknown type '{spec.type}' — skipping")
+            continue
+
+        matched = panel_gdf[spec.output_field].notna().sum()
+        print(f"  {spec.output_field} ({spec.type}, {spec.how}): {matched:,} / {len(panel_gdf):,} matched")
+
+    return panel_gdf
