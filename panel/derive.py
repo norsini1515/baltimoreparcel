@@ -85,6 +85,29 @@ def apply_treatment(gdf: gpd.GeoDataFrame, rule: DeriveRule) -> gpd.GeoDataFrame
     return gdf
 
 
+_COMPARE_OPS = {
+    "gte": lambda s, v: s >= v,
+    "lte": lambda s, v: s <= v,
+    "gt":  lambda s, v: s > v,
+    "lt":  lambda s, v: s < v,
+    "eq":  lambda s, v: s == v,
+    "ne":  lambda s, v: s != v,
+}
+
+
+def apply_compare_rule(gdf: gpd.GeoDataFrame, rule) -> gpd.GeoDataFrame:
+    if rule.source_field not in gdf.columns:
+        from baltimoreparcel.utils import warn
+        warn(f"  compare derive: field '{rule.source_field}' not in panel — skipping '{rule.name}'")
+        return gdf
+    op_fn = _COMPARE_OPS.get(rule.op)
+    if op_fn is None:
+        raise ValueError(f"Unknown compare op: {rule.op!r}. Valid ops: {list(_COMPARE_OPS)}")
+    gdf = gdf.copy()
+    gdf[rule.name] = op_fn(gdf[rule.source_field], rule.threshold).astype(int)
+    return gdf
+
+
 def apply_derive_rules(gdf: gpd.GeoDataFrame, rules: list) -> gpd.GeoDataFrame:
     """Dispatch and apply each DeriveRule in *rules* to *gdf* in order."""
     for rule in rules:
@@ -92,6 +115,8 @@ def apply_derive_rules(gdf: gpd.GeoDataFrame, rules: list) -> gpd.GeoDataFrame:
             gdf = apply_isin_rule(gdf, rule)
         elif rule.type == "treatment":
             gdf = apply_treatment(gdf, rule)
+        elif rule.type == "compare":
+            gdf = apply_compare_rule(gdf, rule)
         else:
             raise ValueError(f"Unknown derive rule type: {rule.type!r}")
     return gdf

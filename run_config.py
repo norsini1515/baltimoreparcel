@@ -96,12 +96,20 @@ class DeriveRule:
           extra_treated  if focus_field == 1
           treated        if ez_field == 1 and focus_field == 0
           untreated      if ez_field == 0
+
+    type = "compare"
+        Creates a binary (0/1) column ``name`` that is 1 when ``field`` satisfies
+        the comparison ``field <op> value``.
+        op: one of gte (>=), lte (<=), gt (>), lt (<), eq (==), ne (!=)
     """
     type: str = "isin"
     # isin fields
     name: Optional[str] = None
     source_field: Optional[str] = None    # renamed from 'field' to avoid shadowing dataclasses.field
     values: list = field(default_factory=list)
+    # compare fields
+    op: Optional[str] = None        # gte | lte | gt | lt | eq | ne
+    threshold: Optional[float] = None
     # ez_treatment fields
     year_field: str = "YEAR"
     periods: list = field(default_factory=list)   # list[TreatmentPeriod]
@@ -607,8 +615,16 @@ def _parse_derive_rules(rules_raw: list) -> list:
                 output_not_treated=r.get("output_not_treated", "NOT_TREATED"),
                 output_label=r.get("output_label", "TREATMENT_GROUP"),
             ))
+        elif rule_type == "compare":
+            rules.append(DeriveRule(
+                type="compare",
+                name=r["name"],
+                source_field=r["field"],
+                op=r["op"],
+                threshold=float(r["value"]),
+            ))
         else:
-            raise ValueError(f"Unknown derive rule type: {rule_type!r}. Valid types: isin, treatment")
+            raise ValueError(f"Unknown derive rule type: {rule_type!r}. Valid types: isin, treatment, compare")
     return rules
 
 
