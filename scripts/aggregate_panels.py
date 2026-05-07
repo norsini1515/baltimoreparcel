@@ -196,7 +196,7 @@ def run(cfg: AggregateRunConfig, do_full: bool = False, do_change: bool = True) 
             _run_aggregations(
                 full_panel,
                 cfg.aggregations.full_panel,
-                panel_name="full_panel",
+                panel_name=cfg.panel.full_panel_layer,
                 geom_lookup=geom_lookup,
             )
         )
@@ -207,7 +207,7 @@ def run(cfg: AggregateRunConfig, do_full: bool = False, do_change: bool = True) 
             _run_aggregations(
                 change_panel,
                 cfg.aggregations.change_panel,
-                panel_name="change_panel",
+                panel_name=cfg.panel.change_panel_layer,
                 geom_lookup=geom_lookup,
             )
         )
@@ -215,7 +215,7 @@ def run(cfg: AggregateRunConfig, do_full: bool = False, do_change: bool = True) 
     info(f"Total layers to export: {len(all_aggregated)}")
 
     for name, gdf in all_aggregated.items():
-        is_change_layer = name.startswith("change_panel")
+        is_change_layer = name.startswith(cfg.panel.change_panel_layer)
         time_pairs = (
             cfg.time_fields_change
             if is_change_layer

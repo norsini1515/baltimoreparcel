@@ -53,6 +53,8 @@ class DataConfig:
     input_layer_pattern: str = "{year}layer"    # GDB feature class name or GPKG layer name
     input_file_pattern: str = "{year}.gpkg"     # GPKG filename (ignored when source_type=gdb)
     source_type: str = "gpkg"                   # "gpkg" or "gdb"
+    base_layer: str = ""                         # static GDB layer used as panel base (neighborhood panel)
+    parcel_layer_pattern: str = ""              # per-year parcel layer to aggregate into base (neighborhood panel)
 
 
 @dataclass
@@ -169,6 +171,25 @@ class SpatialConfig:
 
 
 @dataclass
+class ParcelAggConfig:
+    """
+    How to aggregate per-year parcel layers into the neighborhood base polygon.
+    Only used by assemble_neighborhood_panel.py — ignored by assemble_panel.py.
+
+    join_predicate   Spatial predicate used to assign each parcel to a neighborhood:
+                     "within" (parcel fully inside polygon) or "intersects".
+    count_output_field
+                     Name given to the parcel-count column produced by agg.
+    agg              Dict of {source_field: pandas_agg_func} applied per neighborhood.
+                     Use "count" for any field you want to count (e.g. ACCTID: count).
+    """
+    join_predicate: str = "within"
+    count_output_field: str = "PARCEL_COUNT"
+    agg: dict = field(default_factory=dict)
+    value_counts: list = field(default_factory=list)  # categorical fields to pivot into per-value count columns
+
+
+@dataclass
 class TogglesConfig:
     """Boolean switches that control which steps run inside assemble_panel."""
     generate_new_panel: bool = False
@@ -271,6 +292,7 @@ class PanelRunConfig:
     panel: PanelOutputConfig = field(default_factory=PanelOutputConfig)
     fields: FieldsConfig = field(default_factory=FieldsConfig)
     spatial: SpatialConfig = field(default_factory=SpatialConfig)
+    parcel_agg: ParcelAggConfig = field(default_factory=ParcelAggConfig)
     toggles: TogglesConfig = field(default_factory=TogglesConfig)
     aggregations: AggregationsConfig = field(default_factory=AggregationsConfig)
     ingest: IngestConfig = field(default_factory=IngestConfig)
@@ -502,6 +524,16 @@ def _parse_spatial(raw: dict) -> SpatialConfig:
     return SpatialConfig(joins=joins)
 
 
+def _parse_parcel_agg(raw: dict) -> ParcelAggConfig:
+    pa = raw.get("parcel_agg", {})
+    return ParcelAggConfig(
+        join_predicate=pa.get("join_predicate", "within"),
+        count_output_field=pa.get("count_output_field", "PARCEL_COUNT"),
+        agg=pa.get("agg", {}),
+        value_counts=pa.get("value_counts", []),
+    )
+
+
 def _parse_aggregations(raw: dict) -> AggregationsConfig:
     a = raw.get("aggregations", {})
     return AggregationsConfig(
@@ -616,6 +648,8 @@ def load_config(yaml_path: Union[str, Path]) -> PanelRunConfig:
         input_layer_pattern=d.get("input_layer_pattern", "{year}layer"),
         input_file_pattern=d.get("input_file_pattern", "{year}.gpkg"),
         source_type=d.get("source_type", "gpkg"),
+        base_layer=d.get("base_layer", ""),
+        parcel_layer_pattern=d.get("parcel_layer_pattern", ""),
     )
 
     t = raw.get("toggles", {})
@@ -640,6 +674,7 @@ def load_config(yaml_path: Union[str, Path]) -> PanelRunConfig:
         panel=_parse_panel(raw),
         fields=fields,
         spatial=_parse_spatial(raw),
+        parcel_agg=_parse_parcel_agg(raw),
         toggles=toggles,
         aggregations=_parse_aggregations(raw),
         ingest=ingest,
