@@ -104,7 +104,8 @@ def apply_compare_rule(gdf: gpd.GeoDataFrame, rule) -> gpd.GeoDataFrame:
     if op_fn is None:
         raise ValueError(f"Unknown compare op: {rule.op!r}. Valid ops: {list(_COMPARE_OPS)}")
     gdf = gdf.copy()
-    gdf[rule.name] = op_fn(gdf[rule.source_field], rule.threshold).astype(int)
+    col = pd.to_numeric(gdf[rule.source_field], errors="coerce")
+    gdf[rule.name] = op_fn(col, rule.threshold).fillna(False).astype(int)
     return gdf
 
 
